@@ -102,10 +102,11 @@ src/dispatch_eval/
                               makes, and why that trade-off was necessary)
   ranking_flip.py              P3 — the ranking-flip experiment: bootstrap
                               resampling, refitting all input models per
-                              draw, the B x R x |policies| CRN loop, and
-                              reporting (P(ranked first), Kendall's tau to
-                              the nominal ranking, C1's variance
-                              decomposition)
+                              draw, the B x R x |policies| CRN loop, and all
+                              four of the plan's P3 outputs (P(ranked
+                              first), Kendall's tau to nominal, C1's
+                              variance decomposition, the indifference set,
+                              and the minimum-detectable-effect curve)
 ```
 
 Design choices worth knowing about:
@@ -232,13 +233,23 @@ Design choices worth knowing about:
   assumed: two identically-behaved policies produce *exactly* identical
   metrics at every single (b, r) in the test suite, which would fail loudly
   if the scenario/rng wiring were broken the way it was before the earlier
-  fix. **Not yet built**: the indifference set at level α and the
-  minimum-detectable-effect curve (the plan's other two P3 outputs) — both
-  are straightforward extensions of what's here, just not written yet. Also
-  not yet run at the plan's real scale (B≈200-500) or against real data —
-  only small-scale synthetic runs so far, and the plan's own "metamodel-
-  assisted" fallback for when B×R×|policies| gets too expensive hasn't been
-  needed (or built) at this scale.
+  fix. **All four of the plan's P3 outputs are now built**: `indifference_set`
+  (the bootstrap-percentile method — for every policy other than the
+  grand-mean best, build a (1-α) percentile interval on its paired
+  per-draw-mean difference from best; if it contains zero, the policy joins
+  the indifference set; no multiple-comparisons correction across the
+  simultaneous checks, documented as a first-cut simplification) and
+  `minimum_detectable_effect_curve` (extrapolates MDE(n_days) from *one*
+  measured variance decomposition, assuming across-theta variance shrinks
+  as 1/n_days — a standard asymptotic scaling, not something empirically
+  validated here yet; `subset_trips_by_days` exists as the building block
+  for that validation but isn't wired into anything). Still open: running
+  at the plan's real scale (B≈200-500) or against real data — only
+  small-scale synthetic runs so far (B≤5 for the full experiment, B≤200 for
+  the variance-decomposition-only unit tests), and the plan's own
+  "metamodel-assisted" fallback for when B×R×|policies| gets too expensive
+  hasn't been needed (or built) at this scale. B5's clairvoyant bound also
+  isn't wired into the loop yet for a "fraction of gap closed" metric.
 - **P0.1, P4-P5** — not started.
 
 ### Fixed: the engine's shared RNG wasn't policy-independent
@@ -336,7 +347,7 @@ What that produced, once real Bengaluru anchors were used instead of NYC's:
 
 ```bash
 uv sync              # installs polars, numpy, scipy, pytest, ruff, networkx
-uv run pytest -q     # 64 tests: engine correctness, calibration recovery, adapters, B1-B5, tuning, CRN scenario, P3
+uv run pytest -q     # 70 tests: engine correctness, calibration recovery, adapters, B1-B5, tuning, CRN scenario, P3
 uv run ruff check .  # lint
 ```
 
@@ -359,17 +370,19 @@ df = generate_synthetic_trips(
 2. Run P1 calibration against the real Delhi NCR data and validate against
    held-out days (KS distance on wait time, trip/vehicle-hour, hour-of-day
    shape — see the project plan's P1 validation section).
-3. P3's core loop is built (`ranking_flip.py`) but two of the plan's three
-   P3 outputs are still missing: the indifference set at level α, and the
-   minimum-detectable-effect curve.
+3. P3's core loop and all four plan outputs are built (`ranking_flip.py`).
+   The MDE curve's 1/n variance-scaling assumption hasn't been empirically
+   checked — `subset_trips_by_days` exists for exactly that (refit at 2-3
+   real values of n_days, compare the measured across-theta variance to
+   what the 1/n line predicts) but nothing calls it yet.
 4. Give each of B1-B4 its tuning budget (`calibration/tuning.py`) instead of
    the arbitrary defaults used so far, and wire B5's clairvoyant bound into
    the ranking-flip loop to report "fraction of clairvoyant gap closed" per
    policy per draw — neither done yet.
 5. Run P3 at something closer to the plan's real scale (B≈200-500) — only
-   small (B≤5) synthetic smoke runs so far. Watch whether B×R×|policies|
-   actually needs the plan's metamodel-assisted fallback at that scale
-   before building it preemptively.
+   small (B≤5 for the full experiment) synthetic smoke runs so far. Watch
+   whether B×R×|policies| actually needs the plan's metamodel-assisted
+   fallback at that scale before building it preemptively.
 6. Still open from before: real Delhi NCR / Bengaluru data (a Kaggle token
    and a Namma Yatri scrape, `DEFAULT_COLUMN_MAP` unverified against actual
    headers), and P1 validation against held-out real days.

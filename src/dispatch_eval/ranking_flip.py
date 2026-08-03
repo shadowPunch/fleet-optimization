@@ -42,7 +42,7 @@ from dataclasses import dataclass
 
 import numpy as np
 import polars as pl
-from scipy.stats import kendalltau
+from scipy.stats import kendalltau, norm
 
 from dispatch_eval.calibration.arrivals import fit_arrival_model
 from dispatch_eval.calibration.fare import fit_fare_model
@@ -235,3 +235,94 @@ def variance_decomposition(metric_a: np.ndarray, metric_b: np.ndarray) -> dict[s
         if within_theta > 0
         else float("inf"),
     }
+
+
+def indifference_set(result: RankingFlipResult, alpha: float = 0.05) -> set[str]:
+    """The set of policies that cannot be statistically separated from the
+    best-performing policy at level alpha — plan's P3 output #3: "report
+    this instead of a winner."
+
+    "Best" is whichever policy has the lowest grand-mean metric across all
+    (bootstrap draw, replication) cells. For every other policy, this builds
+    a (1-alpha) bootstrap-percentile interval for (that policy's per-draw
+    mean - best's per-draw mean) across the B bootstrap draws — paired,
+    since both were run against the same theta*_b under CRN. If the
+    interval contains zero, the policy is statistically indistinguishable
+    from the best and belongs in the indifference set.
+
+    No multiple-comparisons correction is applied across the simultaneous
+    |policies|-1 comparisons against "best" — a documented simplification.
+    With few policies (the ladder has 6) the uncorrected percentile
+    intervals are a reasonable first cut; revisit if this needs to support
+    many more candidates at once.
+    """
+    grand_means = {name: float(arr.mean()) for name, arr in result.metric_by_policy.items()}
+    best_name = min(grand_means, key=grand_means.get)
+    best_per_draw = result.metric_by_policy[best_name].mean(axis=1)
+
+    indifferent = {best_name}
+    for name in result.policy_names:
+        if name == best_name:
+            continue
+        per_draw = result.metric_by_policy[name].mean(axis=1)
+        diff = per_draw - best_per_draw
+        lo, hi = np.percentile(diff, [100 * alpha / 2, 100 * (1 - alpha / 2)])
+        if lo <= 0 <= hi:
+            indifferent.add(name)
+    return indifferent
+
+
+def subset_trips_by_days(
+    df: pl.DataFrame, n_days: int, request_ts_col: str = "request_ts"
+) -> pl.DataFrame:
+    """The first `n_days` distinct calendar days of `df`, by `request_ts`.
+
+    A building block for empirically checking how estimation variance
+    shrinks with data volume — not currently wired into anything in this
+    module (see `minimum_detectable_effect_curve`'s docstring for why that
+    validation is a follow-up, not done here).
+    """
+    dates = df[request_ts_col].dt.date().unique().sort()
+    keep_dates = set(dates.head(n_days).to_list())
+    return df.filter(df[request_ts_col].dt.date().is_in(keep_dates))
+
+
+def minimum_detectable_effect_curve(
+    trips_df: pl.DataFrame,
+    variance_decomposition_result: dict[str, float],
+    candidate_days: list[int],
+    confidence: float = 0.95,
+    request_ts_col: str = "request_ts",
+) -> dict[int, float]:
+    """MDE(n) for each candidate number of real days used to fit input
+    models — plan's P3 output #4: "the smallest true effect whose sign is
+    resolved at [confidence]." The practically useful artefact: it tells a
+    future researcher how much data they'd need before a claimed effect
+    size is even resolvable.
+
+    This is one call, not B x R x |policies| x |candidate_days| more
+    simulation: it takes ONE already-computed `variance_decomposition`
+    result (fit at `trips_df`'s actual number of days) and *extrapolates*,
+    assuming across-theta variance (input-model estimation error) shrinks
+    proportionally to 1/n_days — the standard asymptotic scaling for
+    M-estimator / bootstrap variance — while within-theta variance
+    (intrinsic simulator noise for a fixed, already-fitted theta) is held
+    constant, since it reflects replication-to-replication randomness, not
+    how much data theta was fitted from.
+
+    That 1/n scaling is an assumption, not something measured here — a good
+    follow-up is re-running the full bootstrap at 2-3 real values of
+    `n_days` (see `subset_trips_by_days`) and checking the assumed line
+    against what actually comes out.
+    """
+    z = float(norm.ppf(confidence))  # one-sided: P(estimate has the correct sign) = confidence
+    n_days_fitted = trips_df[request_ts_col].dt.date().n_unique()
+    within = variance_decomposition_result["within_theta_variance"]
+    across = variance_decomposition_result["across_theta_variance"]
+
+    mde: dict[int, float] = {}
+    for n in candidate_days:
+        scaled_across = across * (n_days_fitted / n)
+        standard_error = np.sqrt(within + scaled_across)
+        mde[n] = z * standard_error
+    return mde

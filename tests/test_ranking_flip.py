@@ -1,23 +1,40 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import numpy as np
+import polars as pl
 import pytest
 
 from dispatch_eval.models import AbandonmentModel
 from dispatch_eval.policies.batched_hungarian import BatchedHungarianPolicy
 from dispatch_eval.policies.nearest_idle import NearestIdlePolicy
 from dispatch_eval.ranking_flip import (
+    RankingFlipResult,
     bootstrap_resample_trips,
     fit_all_models,
+    indifference_set,
+    minimum_detectable_effect_curve,
     run_ranking_flip_experiment,
+    subset_trips_by_days,
     variance_decomposition,
 )
 from dispatch_eval.simulator.runner import StudyConfig
 from dispatch_eval.sources.synthetic import generate_synthetic_trips
 
 ZONES = ["A", "B", "C"]
+
+
+def _fake_result(policy_names: list[str], metric_arrays: list[np.ndarray]) -> RankingFlipResult:
+    n_bootstrap = metric_arrays[0].shape[0]
+    return RankingFlipResult(
+        policy_names=policy_names,
+        metric_by_policy=dict(zip(policy_names, metric_arrays, strict=True)),
+        rankings=np.zeros(
+            (n_bootstrap, len(policy_names)), dtype=int
+        ),  # unused by indifference_set
+        nominal_ranking=policy_names,
+    )
 
 
 @pytest.fixture(scope="module")
@@ -134,3 +151,67 @@ def test_variance_decomposition_recovers_known_within_and_across_structure():
     assert (
         result["input_uncertainty_ratio"] > 1.0
     )  # across-theta (9) should dominate within-theta (1)
+
+
+def test_indifference_set_excludes_a_clearly_worse_policy():
+    rng = np.random.default_rng(0)
+    n_bootstrap, n_replications = 100, 5
+    best = rng.normal(10.0, 1.0, size=(n_bootstrap, n_replications))
+    worse = rng.normal(50.0, 1.0, size=(n_bootstrap, n_replications))
+    result = _fake_result(["best", "worse"], [best, worse])
+
+    assert indifference_set(result, alpha=0.05) == {"best"}
+
+
+def test_indifference_set_includes_statistically_indistinguishable_policies():
+    rng = np.random.default_rng(0)
+    n_bootstrap, n_replications = 100, 5
+    a = rng.normal(10.0, 1.0, size=(n_bootstrap, n_replications))
+    b = a + rng.normal(0.0, 0.01, size=(n_bootstrap, n_replications))  # noise-level difference
+    result = _fake_result(["a", "b"], [a, b])
+
+    assert indifference_set(result, alpha=0.05) == {"a", "b"}
+
+
+def test_indifference_set_always_contains_the_best_policy():
+    rng = np.random.default_rng(1)
+    metrics = [rng.normal(mean, 1.0, size=(50, 4)) for mean in (10.0, 20.0, 30.0)]
+    result = _fake_result(["a", "b", "c"], metrics)
+
+    assert "a" in indifference_set(result, alpha=0.05)
+
+
+def _trips_df_spanning_days(n_days: int) -> pl.DataFrame:
+    start = datetime(2026, 1, 1)
+    timestamps = [start + timedelta(days=d, hours=1) for d in range(n_days)]
+    return pl.DataFrame({"request_ts": timestamps})
+
+
+def test_subset_trips_by_days_keeps_only_the_first_n_calendar_days():
+    df = _trips_df_spanning_days(10)
+    subset = subset_trips_by_days(df, n_days=3, request_ts_col="request_ts")
+    assert subset["request_ts"].dt.date().n_unique() == 3
+    assert subset["request_ts"].dt.date().max() == df["request_ts"].dt.date()[2]
+
+
+def test_mde_curve_decreases_as_candidate_days_increase():
+    trips_df = _trips_df_spanning_days(10)
+    variance_result = {"within_theta_variance": 4.0, "across_theta_variance": 16.0}
+    curve = minimum_detectable_effect_curve(
+        trips_df, variance_result, candidate_days=[5, 10, 20, 40], confidence=0.95
+    )
+    values = [curve[n] for n in (5, 10, 20, 40)]
+    assert values == sorted(values, reverse=True)  # strictly more data -> smaller MDE
+    assert all(v > 0 for v in values)
+
+
+def test_mde_curve_at_fitted_days_matches_the_unscaled_standard_error():
+    trips_df = _trips_df_spanning_days(10)
+    variance_result = {"within_theta_variance": 4.0, "across_theta_variance": 16.0}
+    curve = minimum_detectable_effect_curve(
+        trips_df, variance_result, candidate_days=[10], confidence=0.95
+    )
+    from scipy.stats import norm
+
+    expected = norm.ppf(0.95) * np.sqrt(4.0 + 16.0)  # n == n_days_fitted: no rescaling
+    assert curve[10] == pytest.approx(expected)
