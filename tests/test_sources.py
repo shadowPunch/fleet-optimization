@@ -12,6 +12,7 @@ from dispatch_eval.schema import (
 )
 from dispatch_eval.sources.bengaluru import adapt_bengaluru_ward_aggregates
 from dispatch_eval.sources.delhi_ncr import adapt_delhi_ncr_trips
+from dispatch_eval.sources.nyc_tlc import adapt_nyc_tlc_trips
 from dispatch_eval.sources.synthetic import generate_synthetic_trips
 
 ZONES = ["A", "B", "C"]
@@ -98,3 +99,27 @@ def test_adapt_bengaluru_ward_aggregates_raises_on_missing_required_column():
     raw = pl.DataFrame({"Ward": ["Indiranagar"]})
     with pytest.raises(ValueError, match="Missing required"):
         adapt_bengaluru_ward_aggregates(raw)
+
+
+def test_adapt_nyc_tlc_trips_maps_columns():
+    # Field names match the live fhvhv_tripdata schema exactly (verified by
+    # scanning the real file), unlike the Delhi NCR / Bengaluru guesses.
+    raw = pl.DataFrame(
+        {
+            "hvfhs_license_num": ["HV0003", "HV0003"],
+            "PULocationID": [7, 130],
+            "DOLocationID": [234, 122],
+            "request_datetime": [datetime(2024, 1, 16, 0, 3), datetime(2024, 1, 16, 0, 4)],
+            "pickup_datetime": [datetime(2024, 1, 16, 0, 9), datetime(2024, 1, 16, 0, 10)],
+            "dropoff_datetime": [datetime(2024, 1, 16, 0, 25), datetime(2024, 1, 16, 0, 20)],
+            "trip_miles": [5.0, 2.0],
+            "base_passenger_fare": [22.5, 10.0],
+            "driver_pay": [17.0, 7.5],
+        }
+    )
+    adapted = adapt_nyc_tlc_trips(raw)
+    validate_trip_records(adapted)
+    assert adapted["origin_zone"].to_list() == ["7", "130"]
+    assert adapted["status"].unique().to_list() == ["completed"]
+    assert adapted["trip_distance_km"][0] == pytest.approx(5.0 * 1.609344)
+    assert adapted["source"].unique().to_list() == ["nyc_tlc"]
