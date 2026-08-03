@@ -250,11 +250,52 @@ how CRN is meant to apply here (fix the arrival process, let realized trips
 vary by policy). `tests/test_scenario.py` covers determinism, order-
 independence, and the full-trace regression check described above.
 
+## Validating the synthetic generator against real data
+
+No public trip-level dataset exists for any Indian city, so the synthetic
+generator has never been checked against something real. NYC TLC data is —
+real, richly fielded, and downloadable with no credentials, unlike Bengaluru
+or Delhi NCR. `sources/nyc_tlc.py` is a **verified** adapter (confirmed
+against a live scan of the actual parquet schema, unlike the unverified
+Delhi NCR / Bengaluru column-map guesses), and
+`analysis/nyc_reference_comparison.py` fetches one day of real Uber trips and
+compares the synthetic generator's output against it — not to match NYC's
+absolute numbers (different currency, city, and fleet scale guarantee they
+won't match), but to check whether the *shape* is comparable and explain the
+gaps that remain. Full write-up with charts:
+[Synthetic vs. Real: Validating the Trip Generator](https://claude.ai/code/artifact/32decd9f-e4e5-4dff-8026-0f12160bcd63).
+
+Headline findings:
+
+- **Daily demand rhythm**: 96.4% cosine-similar. NYC has a midnight bump
+  (nightlife) the synthetic model's two-Gaussian shape structurally can't
+  produce.
+- **Wait time**: the synthetic run's median is *shorter* than NYC's (an
+  oversupplied toy fleet) but its tail is *longer* (15 zones pool supply far
+  less effectively than NYC's much deeper market) — short median, fat tail,
+  the opposite of what "oversupplied" would naively suggest.
+- **Trip distance**: real trips are heavily right-skewed (skewness 5.3); the
+  generator draws from a symmetric Normal (skewness 0.18). A concrete,
+  fixable gap — lognormal would match better.
+- **Fare structure**: fit with this project's own `fit_fare_model` on both.
+  Dollar amounts aren't comparable, but the distance:duration weighting is
+  (NYC 3.1×, synthetic 7.5×) and the fit quality gap is real (R² 0.77 real
+  vs ~1.0 synthetic — real fares have surge/tolls/promos noise a
+  deterministic synthetic fare never has to contend with).
+- **Driver pay fraction**: the assumed constant (0.75) lands close to NYC's
+  real median (0.72) — reassuring, but Namma Yatri's zero-commission model
+  means this NYC anchor likely doesn't transfer to Bengaluru specifically.
+- **The identifiability finding**: only 13% of NYC's own zone×zone×hour
+  cells have ≥5 trips, covering 48% of trips — even 454,813 trips in one day
+  isn't enough to densely populate a fine-grained OD-time cube. This is
+  supporting evidence for the project's actual thesis (identification is
+  hard even in a data-rich city), not a generator bug.
+
 ## Running it
 
 ```bash
-uv sync              # installs polars, numpy, scipy, pytest, ruff
-uv run pytest -q     # 56 tests: engine correctness, calibration recovery, adapters, B1-B5, tuning, CRN scenario
+uv sync              # installs polars, numpy, scipy, pytest, ruff, networkx
+uv run pytest -q     # 57 tests: engine correctness, calibration recovery, adapters, B1-B5, tuning, CRN scenario
 uv run ruff check .  # lint
 ```
 
