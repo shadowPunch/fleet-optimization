@@ -88,6 +88,13 @@ src/dispatch_eval/
                               unverified — see docstring)
     bengaluru.py                adapter for Namma Yatri's ward aggregates
                               (schema unverified — see docstring)
+  clairvoyant.py              B5 — offline upper bound, not a DispatchPolicy:
+                              time-expanded min-cost flow over (zone, time
+                              bin) nodes, since one vehicle can serve many
+                              requests in sequence and that's a flow, not a
+                              one-shot assignment (see its module docstring
+                              for the pessimistic-pinning approximation it
+                              makes, and why that trade-off was necessary)
 ```
 
 Design choices worth knowing about:
@@ -177,26 +184,57 @@ Design choices worth knowing about:
     per-replication seed. Tested: moving vehicles toward sampled demand, the
     no-idle-vehicles and nothing-sampled edge cases, never "repositioning" a
     vehicle to the zone it's already in, delegation, and an end-to-end run.
-  - **B5** (clairvoyant offline upper bound) — not started, and harder than
-    it looks: a *single-tick* bipartite match (like B1) isn't a valid
-    multi-request-per-vehicle upper bound, but a fully general multi-hop
-    min-cost flow needs per-request nodes split into in/out pairs to respect
-    flow conservation, and edge costs into a request's "out" side are
-    state-dependent (they depend on *when* that request was picked up, which
-    is exactly what's being solved for) — not a fixed-cost-graph problem in
-    the naive formulation. The tractable fix sketched out but not yet built:
-    time-expand the graph (nodes = (zone, time bin)) and pin each request's
-    exit node pessimistically to its patience deadline rather than its true
-    (solution-dependent) pickup time — gives a valid, honestly-conservative
-    achievable offline schedule rather than a razor-tight bound, which is a
-    fair trade at this project's scale.
-- **P0.1, P3-P5** — not started.
+  - **B5** done: `clairvoyant.py` is a time-expanded min-cost flow (one node
+    per (zone, time_bin), via `networkx.min_cost_flow`), not a
+    `DispatchPolicy` — a single-tick bipartite match (like B1-B4) isn't a
+    valid multi-request-per-vehicle upper bound, since one vehicle serving
+    several requests in sequence is a flow-conservation problem, not a
+    one-shot assignment. Free "wait" edges (same zone, next bin) and free
+    "reposition" edges (any zone pair, `k` bins later) let an idle vehicle
+    always relocate, matching what B3/B4 can do online — without those, B5
+    would be a *looser* bound than the policies it's meant to normalize
+    against. Each request gets a capacity-1 in→out edge carrying a large
+    service bonus, so maximizing requests served dominates minimizing wait.
+    Uses the same **pessimistic-pinning approximation** flagged when this
+    was scoped out earlier (a request's exit point is pinned to its patience
+    deadline, not its true solution-dependent pickup time) — turned out to
+    matter more than expected: serving a request ties up its vehicle until
+    *that request's own* patience deadline regardless of how fast it was
+    actually picked up, confirmed while writing the tests (a two-request
+    chain failed until the first request's patience was shortened). Tested:
+    trivial same-zone service, an infeasible request correctly going
+    unserved, a single vehicle chaining two sequential requests (the
+    capability a bipartite match doesn't have), bonus dominance under that
+    pinning cost, and a capacity check. See the module docstring for the
+    full reasoning.
+- **P0.1, P3-P5** — not started. (P2's baseline ladder, B0-B5, is now complete —
+  don't confuse it with P5, the separate optional RL-entry phase.)
+
+### Known limitation: the engine's shared RNG isn't policy-independent
+
+Found while scoping B5, not fixed here (it's an engine-wide issue, and the
+right place to fix it is P3, where the bootstrap-CRN harness needs it
+anyway): `SimulationEngine` draws every random number — arrival times,
+destinations, abandonment patience, *and* travel-time realizations for
+whatever gets dispatched — from one shared `rng`, consumed in event-time
+order. Two different policies make different numbers of dispatch decisions
+interleaved between the same two request arrivals, which shifts how many
+draws have been consumed from the shared stream by the time the *next*
+request's destination and patience get drawn. So even with an identical
+seed, two policies currently do **not** see the same realized request
+trace — which breaks the "common random numbers across policies" property
+the plan calls "non-negotiable" for P3, and means B5's input (a fixed
+realized trace) isn't yet well-defined *across* a policy comparison, only
+for one run in isolation. The fix is to pre-generate the exogenous scenario
+(arrival times, origins, destinations, patience) once, upfront, independent
+of any policy's event-loop behavior, and give it to every policy's engine
+run unchanged — a P3-scoped change, not a B5 one.
 
 ## Running it
 
 ```bash
 uv sync              # installs polars, numpy, scipy, pytest, ruff
-uv run pytest -q     # 47 tests: engine correctness, calibration recovery, adapters, B1, tuning, B2, B3, B4
+uv run pytest -q     # 53 tests: engine correctness, calibration recovery, adapters, B1-B5, tuning
 uv run ruff check .  # lint
 ```
 
@@ -219,5 +257,15 @@ df = generate_synthetic_trips(
 2. Run P1 calibration against the real Delhi NCR data and validate against
    held-out days (KS distance on wait time, trip/vehicle-hour, hour-of-day
    shape — see the project plan's P1 validation section).
-3. P2: the time-expanded clairvoyant solver for B5 — see the status section
-   above for what it requires. That's the last rung of the baseline ladder.
+3. P2's baseline ladder (B0-B5) is complete. Before starting P3 (the
+   ranking-flip experiment, which needs common random numbers across
+   policies): fix the shared-RNG issue above — pre-generate the exogenous
+   scenario once per (bootstrap draw, replication) and reuse it unchanged
+   across every policy's engine run, rather than letting each run draw
+   requests reactively from a stream its own dispatch decisions also
+   consume from.
+4. Give each of B1-B4 its tuning budget (`calibration/tuning.py`) instead of
+   the arbitrary defaults used so far, and run B5 against the same realized
+   trace to get real "fraction of clairvoyant gap closed" numbers — neither
+   has been done yet; everything so far has only been tested for
+   correctness, not run as an actual comparative study.
