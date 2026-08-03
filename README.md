@@ -53,6 +53,9 @@ src/dispatch_eval/
     batched_hungarian.py       B1 — batched optimal assignment (scipy Hungarian),
                               tunable batch window (Δ = dispatch_interval_seconds)
                               and matching radius r
+    value_corrected_hungarian.py B2 — B1's assignment, but the cost matrix adds
+                              a value-function correction so a policy can
+                              avoid stranding a vehicle in a low-demand zone
   calibration/
     arrivals.py               fit NHPP rates per (zone, day_type, bin);
                               index-of-dispersion diagnostic
@@ -66,6 +69,9 @@ src/dispatch_eval/
     tuning.py                  fixed-budget random-search harness so every
                               policy in the ladder gets an identical tuning
                               budget (the P2 parity condition)
+    value_function.py           backward-induction DP for B2: C(zone, time_bin)
+                              = expected future idle time from being positioned
+                              there, over the fitted arrival/OD/travel-time models
   sources/
     synthetic.py              ground-truth generator + simulator-backed
                               trip generation, for development and tests
@@ -96,6 +102,13 @@ Design choices worth knowing about:
   `"cancelled_customer"`, matching the same censoring every real source in
   this project has. Calibration tests only ever try to recover things that
   are supposed to be recoverable.
+- **Assignment-cost terms that are constant across a row or column get
+  dropped, not computed.** B2's value correction only ever adds `C` at the
+  *candidate* destination, never at the vehicle's own current position —
+  that term is the same for every entry in a vehicle's column, so it can
+  never change which column a row prefers (a standard property of the
+  assignment problem). Same reasoning is why B1's radius cutoff is a hard
+  exclusion rather than a soft penalty term.
 
 ## Status against the phase plan
 
@@ -111,16 +124,23 @@ Design choices worth knowing about:
     tested for assignment correctness (including a case where greedy
     nearest-idle is provably worse than the batched optimum), radius-cutoff
     behaviour, and an end-to-end tuning run.
-  - **B2** (min-cost flow + value-function correction) — not started. This
-    one is tractable within the existing per-tick `DispatchPolicy` interface
-    (same Hungarian machinery as B1, just a value-corrected cost matrix), but
-    needs a value function first: a backward-induction Bellman recursion
-    `V(zone, time_bin)` over the fitted arrival/OD/fare models, plus a
-    value-of-time weighting to make "expected future value" and "pickup
-    travel time" commensurable in one cost. Both are real design decisions,
-    not yet made.
+  - **B2** done: `calibration/value_function.py` computes `C(zone, time_bin)`
+    via backward induction over the fitted arrival/OD/travel-time models — a
+    mean-field, single-vehicle MDP where each idle bin costs `bin_seconds`
+    of wasted capacity and serving a request (assumed to depart from the
+    vehicle's own zone) costs nothing but chains to `C` at the destination.
+    `policies/value_corrected_hungarian.py` adds `value_weight * C(dest,
+    dropoff_bin)` to B1's pickup-time cost (`value_weight=0` recovers B1
+    exactly; the vehicle's *own* current-position `C` is provably irrelevant
+    to the assignment and is omitted, not computed for nothing — see the
+    module docstring for why). Tested: terminal boundary, a busy zone
+    getting a strictly lower cost-to-go than a quiet one, monotonic decay
+    as the horizon closes, the value correction actually flipping a tied
+    pickup-cost choice toward the better destination, and an end-to-end run.
   - **B3** (+ zone-balancing repositioning) and **B4** (+ sampling-based
-    lookahead) — not started; depend on B2's value function existing first.
+    lookahead) — not started, but B2's value function unblocks both now
+    (e.g. B3 could reposition an idle vehicle toward whichever reachable
+    zone has the lowest `C`).
   - **B5** (clairvoyant offline upper bound) — not started, and harder than
     it looks: a *single-tick* bipartite match (like B1) isn't a valid
     multi-request-per-vehicle upper bound, but a fully general multi-hop
@@ -140,7 +160,7 @@ Design choices worth knowing about:
 
 ```bash
 uv sync              # installs polars, numpy, scipy, pytest, ruff
-uv run pytest -q     # 27 tests: engine correctness, calibration recovery, adapters, B1, tuning
+uv run pytest -q     # 34 tests: engine correctness, calibration recovery, adapters, B1, tuning, B2
 uv run ruff check .  # lint
 ```
 
@@ -163,6 +183,7 @@ df = generate_synthetic_trips(
 2. Run P1 calibration against the real Delhi NCR data and validate against
    held-out days (KS distance on wait time, trip/vehicle-hour, hour-of-day
    shape — see the project plan's P1 validation section).
-3. P2: value function for B2 (unlocks B2-B4), then the time-expanded
+3. P2: B3 (zone-balancing repositioning) and B4 (sampling-based lookahead),
+   both now unblocked by B2's value function, then the time-expanded
    clairvoyant solver for B5 — see the status section above for what each
    actually requires.
