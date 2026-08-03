@@ -5,6 +5,7 @@ import numpy as np
 from dispatch_eval.models import AbandonmentModel, NHPPArrivalModel, ODModel, TravelTimeModel
 from dispatch_eval.policies.nearest_idle import NearestIdlePolicy
 from dispatch_eval.policies.sampling_lookahead import SamplingLookaheadPolicy
+from dispatch_eval.scenario import generate_scenario
 from dispatch_eval.simulator.engine import SimulationEngine
 from dispatch_eval.simulator.entities import Request, RequestStatus, Vehicle
 
@@ -151,18 +152,19 @@ def test_sampling_lookahead_actually_moves_vehicles_in_the_engine():
         day_type="all",
         lookahead_seconds=300.0,
     )
+    rng = np.random.default_rng(0)
+    scenario = generate_scenario(
+        zones, "all", arrival_model, od_model, abandonment_model, 1800.0, rng
+    )
 
     engine = SimulationEngine(
         vehicles=vehicles,
-        arrival_model=arrival_model,
-        od_model=od_model,
+        scenario=scenario,
         travel_time_model=tt_model,
-        abandonment_model=abandonment_model,
         policy=policy,
         zones=zones,
-        day_type="all",
         horizon_seconds=1800.0,
-        rng=np.random.default_rng(0),
+        rng=rng,
         dispatch_interval_seconds=30.0,
     )
     engine.run()

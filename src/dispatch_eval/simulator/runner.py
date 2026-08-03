@@ -3,6 +3,12 @@
 This is the seam `calibration.fleet_size` needs: something callable
 repeatedly with a candidate fleet size that returns simulated outcomes,
 without the caller needing to know anything about the engine's internals.
+
+Generates the request `Scenario` fresh on every call, from whatever `rng` is
+passed in — so calling this twice with two different policies but a freshly
+seeded `rng` of the same seed reproduces the identical scenario for both
+(see `dispatch_eval.scenario`), which is exactly what a fair comparison
+needs.
 """
 
 from __future__ import annotations
@@ -13,6 +19,7 @@ import numpy as np
 
 from dispatch_eval.models import AbandonmentModel, NHPPArrivalModel, ODModel, TravelTimeModel
 from dispatch_eval.policies.base import DispatchPolicy
+from dispatch_eval.scenario import generate_scenario
 from dispatch_eval.simulator.engine import SimulationEngine, SimulationResult
 from dispatch_eval.simulator.entities import Vehicle
 
@@ -36,22 +43,28 @@ def run_simulation(
     config: StudyConfig,
     rng: np.random.Generator,
 ) -> SimulationResult:
+    scenario = generate_scenario(
+        config.zones,
+        config.day_type,
+        arrival_model,
+        od_model,
+        abandonment_model,
+        config.horizon_seconds,
+        rng,
+        config.od_bin_minutes,
+    )
     vehicles = [
         Vehicle(vehicle_id=f"veh-{i}", zone=config.zones[i % len(config.zones)])
         for i in range(fleet_size)
     ]
     engine = SimulationEngine(
         vehicles=vehicles,
-        arrival_model=arrival_model,
-        od_model=od_model,
+        scenario=scenario,
         travel_time_model=travel_time_model,
-        abandonment_model=abandonment_model,
         policy=policy,
         zones=config.zones,
-        day_type=config.day_type,
         horizon_seconds=config.horizon_seconds,
         rng=rng,
         dispatch_interval_seconds=config.dispatch_interval_seconds,
-        od_bin_minutes=config.od_bin_minutes,
     )
     return engine.run()

@@ -5,6 +5,7 @@ import pytest
 
 from dispatch_eval.models import AbandonmentModel, NHPPArrivalModel, ODModel, TravelTimeModel
 from dispatch_eval.policies.nearest_idle import NearestIdlePolicy
+from dispatch_eval.scenario import Scenario
 from dispatch_eval.simulator.engine import SimulationEngine
 from dispatch_eval.simulator.entities import Vehicle, VehicleStatus
 from dispatch_eval.simulator.runner import StudyConfig, run_simulation
@@ -73,17 +74,14 @@ def test_undersupplied_fleet_produces_abandonment():
 
 
 def test_reposition_vehicle_transitions_state_and_completes():
-    arrival_model, od_model, tt_model, ab_model = _uniform_models(rate_per_minute=0.0)
+    _, _, tt_model, _ = _uniform_models(rate_per_minute=0.0)
     vehicle = Vehicle(vehicle_id="veh-0", zone="A")
     engine = SimulationEngine(
         vehicles=[vehicle],
-        arrival_model=arrival_model,
-        od_model=od_model,
+        scenario=Scenario(requests=[]),
         travel_time_model=tt_model,
-        abandonment_model=ab_model,
         policy=NearestIdlePolicy(),
         zones=ZONES,
-        day_type="all",
         horizon_seconds=3600.0,
         rng=np.random.default_rng(2),
     )

@@ -3,23 +3,25 @@
 Deliberately minimal per the P1 spec in the project plan: ward/zone-level,
 single operator, no road graph. All simulation time is seconds since the
 start of the run.
+
+Takes a pre-built `Scenario` rather than generating requests reactively
+during the event loop — see `dispatch_eval.scenario` for why: reactive
+generation, interleaved with policy-dependent dispatch draws from the same
+rng, meant two policies run with the "same seed" didn't actually see the
+same requests, which breaks common random numbers.
 """
 
 from __future__ import annotations
 
 import heapq
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from itertools import count
 
 import numpy as np
 
-from dispatch_eval.models import (
-    AbandonmentModel,
-    NHPPArrivalModel,
-    ODModel,
-    TravelTimeModel,
-)
+from dispatch_eval.models import TravelTimeModel
 from dispatch_eval.policies.base import DispatchPolicy
+from dispatch_eval.scenario import Scenario
 from dispatch_eval.simulator.entities import Request, RequestStatus, Vehicle, VehicleStatus
 from dispatch_eval.simulator.events import Event, EventType
 
@@ -51,34 +53,26 @@ class SimulationEngine:
     def __init__(
         self,
         vehicles: list[Vehicle],
-        arrival_model: NHPPArrivalModel,
-        od_model: ODModel,
+        scenario: Scenario,
         travel_time_model: TravelTimeModel,
-        abandonment_model: AbandonmentModel,
         policy: DispatchPolicy,
         zones: list[str],
-        day_type: str,
         horizon_seconds: float,
         rng: np.random.Generator,
         dispatch_interval_seconds: float = 5.0,
-        od_bin_minutes: float = 60.0,
     ) -> None:
         self.vehicles = {v.vehicle_id: v for v in vehicles}
-        self.arrival_model = arrival_model
-        self.od_model = od_model
+        self.scenario = scenario
         self.travel_time_model = travel_time_model
-        self.abandonment_model = abandonment_model
         self.policy = policy
         self.zones = zones
-        self.day_type = day_type
         self.horizon_seconds = horizon_seconds
         self.rng = rng
         self.dispatch_interval_seconds = dispatch_interval_seconds
-        self.od_bin_minutes = od_bin_minutes
 
         self._queue: list[Event] = []
         self._seq = count()
-        self._request_counter = count()
+        self._scenario_by_id = {r.request_id: r for r in scenario.requests}
         self.requests: dict[str, Request] = {}
         self._completed: list[Request] = []
         self._abandoned: list[Request] = []
@@ -106,14 +100,12 @@ class SimulationEngine:
             arrival_time, EventType.REPOSITION_ARRIVAL, vehicle_id=vehicle_id, zone=target_zone
         )
 
-    def _seed_arrivals(self) -> None:
-        horizon_minutes = self.horizon_seconds / 60.0
-        for zone in self.zones:
-            arrival_minutes = self.arrival_model.generate_arrival_minutes(
-                zone, self.day_type, 0.0, horizon_minutes, self.rng
-            )
-            for minute in arrival_minutes:
-                self._schedule(minute * 60.0, EventType.REQUEST_ARRIVAL, zone=zone)
+    def _seed_requests(self) -> None:
+        for request in self.scenario.requests:
+            if request.request_time <= self.horizon_seconds:
+                self._schedule(
+                    request.request_time, EventType.REQUEST_ARRIVAL, request_id=request.request_id
+                )
 
     def _seed_dispatch_ticks(self) -> None:
         t = 0.0
@@ -122,7 +114,7 @@ class SimulationEngine:
             t += self.dispatch_interval_seconds
 
     def run(self) -> SimulationResult:
-        self._seed_arrivals()
+        self._seed_requests()
         self._seed_dispatch_ticks()
 
         while self._queue:
@@ -141,18 +133,12 @@ class SimulationEngine:
         )
 
     def _handle_request_arrival(self, event: Event) -> None:
-        zone = event.payload["zone"]
-        time_bin = int((event.time / 60.0) // self.od_bin_minutes)
-        dest_zone = self.od_model.sample_destination(zone, time_bin, self.rng)
-        request_id = f"req-{next(self._request_counter)}"
-        patience = self.abandonment_model.sample_patience(self.rng)
-        request = Request(
-            request_id=request_id,
-            origin_zone=zone,
-            dest_zone=dest_zone,
-            request_time=event.time,
-            abandon_at=event.time + patience,
-        )
+        request_id = event.payload["request_id"]
+        # Copy the scenario's template rather than using it directly: the
+        # same Scenario is reused across multiple engine runs (one per
+        # policy, for a fair comparison), and each run needs its own fresh
+        # WAITING/unassigned state rather than mutating the shared template.
+        request = replace(self._scenario_by_id[request_id])
         self.requests[request_id] = request
         self._schedule(request.abandon_at, EventType.ABANDONMENT, request_id=request_id)
 

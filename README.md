@@ -41,10 +41,15 @@ src/dispatch_eval/
   schema.py               canonical TRIP_RECORD / WARD_AGGREGATE shapes + validation
   models.py                runtime input models: NHPPArrivalModel, ODModel,
                             TravelTimeModel, FareModel, AbandonmentModel
+  scenario.py              pre-generates the exogenous request scenario
+                            (arrivals, destinations, patience) once, upfront
+                            — the fix for the CRN bug described below
   simulator/
     entities.py             Vehicle, Request, and their state enums
     events.py                Event + EventType for the heapq queue
-    engine.py                SimulationEngine: the event loop itself
+    engine.py                SimulationEngine: the event loop itself, driven
+                              by a pre-built Scenario rather than generating
+                              requests reactively
     runner.py                 wires fitted models + a policy + fleet size
                               into one run_simulation() call
   policies/
@@ -210,31 +215,46 @@ Design choices worth knowing about:
 - **P0.1, P3-P5** — not started. (P2's baseline ladder, B0-B5, is now complete —
   don't confuse it with P5, the separate optional RL-entry phase.)
 
-### Known limitation: the engine's shared RNG isn't policy-independent
+### Fixed: the engine's shared RNG wasn't policy-independent
 
-Found while scoping B5, not fixed here (it's an engine-wide issue, and the
-right place to fix it is P3, where the bootstrap-CRN harness needs it
-anyway): `SimulationEngine` draws every random number — arrival times,
-destinations, abandonment patience, *and* travel-time realizations for
-whatever gets dispatched — from one shared `rng`, consumed in event-time
-order. Two different policies make different numbers of dispatch decisions
-interleaved between the same two request arrivals, which shifts how many
-draws have been consumed from the shared stream by the time the *next*
-request's destination and patience get drawn. So even with an identical
-seed, two policies currently do **not** see the same realized request
-trace — which breaks the "common random numbers across policies" property
-the plan calls "non-negotiable" for P3, and means B5's input (a fixed
-realized trace) isn't yet well-defined *across* a policy comparison, only
-for one run in isolation. The fix is to pre-generate the exogenous scenario
-(arrival times, origins, destinations, patience) once, upfront, independent
-of any policy's event-loop behavior, and give it to every policy's engine
-run unchanged — a P3-scoped change, not a B5 one.
+Found while scoping B5: `SimulationEngine` used to draw every random
+number — arrival times, destinations, abandonment patience, *and*
+travel-time realizations for whatever got dispatched — from one shared
+`rng`, consumed in event-time order. Two different policies make different
+numbers of dispatch decisions interleaved between the same two request
+arrivals, which shifted how many draws had been consumed from the shared
+stream by the time the *next* request's destination and patience got drawn.
+So even with an identical seed, two policies did **not** see the same
+realized request trace — breaking the "common random numbers across
+policies" property the plan calls "non-negotiable" for P3.
+
+Confirmed empirically before fixing it: with the old engine, an identical
+seed run through `NearestIdlePolicy` vs. `BatchedHungarianPolicy` produced
+111 requests either way, but 80 of them had a different destination and/or
+abandonment deadline between the two — the count alone looked fine, only
+the actual content differed.
+
+**Fix** (`scenario.py`): the whole exogenous scenario — every request's
+arrival time, origin, destination, and patience — is now generated once,
+upfront, in an order that depends only on the zone list and fitted models,
+never on anything a policy does. `SimulationEngine` no longer generates
+requests reactively; it takes a pre-built, read-only `Scenario` and just
+schedules arrival events against it (copying each request fresh per run, so
+the same `Scenario` object can be safely reused across multiple policies'
+engine runs without one run's mutations leaking into another's). Travel-time
+*realizations* are still drawn reactively from the engine's own rng during
+the event loop — deliberately: which (vehicle, request) pairs actually
+occur depends on the policy, so there's no way to pre-fix "the" travel time
+for a trip that might not even happen under some policy, and that's exactly
+how CRN is meant to apply here (fix the arrival process, let realized trips
+vary by policy). `tests/test_scenario.py` covers determinism, order-
+independence, and the full-trace regression check described above.
 
 ## Running it
 
 ```bash
 uv sync              # installs polars, numpy, scipy, pytest, ruff
-uv run pytest -q     # 53 tests: engine correctness, calibration recovery, adapters, B1-B5, tuning
+uv run pytest -q     # 56 tests: engine correctness, calibration recovery, adapters, B1-B5, tuning, CRN scenario
 uv run ruff check .  # lint
 ```
 
@@ -257,13 +277,9 @@ df = generate_synthetic_trips(
 2. Run P1 calibration against the real Delhi NCR data and validate against
    held-out days (KS distance on wait time, trip/vehicle-hour, hour-of-day
    shape — see the project plan's P1 validation section).
-3. P2's baseline ladder (B0-B5) is complete. Before starting P3 (the
-   ranking-flip experiment, which needs common random numbers across
-   policies): fix the shared-RNG issue above — pre-generate the exogenous
-   scenario once per (bootstrap draw, replication) and reuse it unchanged
-   across every policy's engine run, rather than letting each run draw
-   requests reactively from a stream its own dispatch decisions also
-   consume from.
+3. P2's baseline ladder (B0-B5) is complete, and the shared-RNG/CRN bug is
+   fixed (see above) — P3 (the ranking-flip experiment) is no longer
+   blocked on that.
 4. Give each of B1-B4 its tuning budget (`calibration/tuning.py`) instead of
    the arbitrary defaults used so far, and run B5 against the same realized
    trace to get real "fraction of clairvoyant gap closed" numbers — neither
