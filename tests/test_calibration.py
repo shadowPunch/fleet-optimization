@@ -71,11 +71,18 @@ def test_fit_travel_time_model_recovers_ground_truth_params(synthetic_df, ground
 
 
 def test_fit_fare_model_recovers_linear_coefficients(synthetic_df):
-    # generate_synthetic_trips uses fare_base=20, fare_per_km=15, fare_per_minute=2
+    # generate_synthetic_trips's ground truth (see sources/synthetic.py):
+    # FARE_BASE=10, FARE_PER_KM=18, FARE_PER_MINUTE=0.5. Recovery is noisier
+    # than a naive regression tolerance would suggest because distance is
+    # now *derived* from duration (through Bengaluru's real average speed,
+    # not drawn independently) — the two regressors are correlated
+    # (r~0.9), which is realistic (real trip distance and duration are
+    # correlated too) but makes fare_per_km/fare_per_minute harder to
+    # separate cleanly than the old fully-independent-distance version.
     fitted = fit_fare_model(synthetic_df)
-    assert fitted.intercept == pytest.approx(20.0, abs=1.0)
-    assert fitted.distance_coef == pytest.approx(15.0, abs=0.5)
-    assert fitted.duration_coef == pytest.approx(2.0, abs=0.5)
+    assert fitted.intercept == pytest.approx(10.0, abs=3.0)
+    assert fitted.distance_coef == pytest.approx(18.0, abs=4.0)
+    assert fitted.duration_coef == pytest.approx(0.5, abs=0.2)
 
 
 def test_calibrate_fleet_size_recovers_a_known_monotone_relationship():

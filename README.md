@@ -253,7 +253,7 @@ independence, and the full-trace regression check described above.
 ## Validating the synthetic generator against real data
 
 No public trip-level dataset exists for any Indian city, so the synthetic
-generator has never been checked against something real. NYC TLC data is —
+generator had never been checked against something real. NYC TLC data is —
 real, richly fielded, and downloadable with no credentials, unlike Bengaluru
 or Delhi NCR. `sources/nyc_tlc.py` is a **verified** adapter (confirmed
 against a live scan of the actual parquet schema, unlike the unverified
@@ -261,35 +261,50 @@ Delhi NCR / Bengaluru column-map guesses), and
 `analysis/nyc_reference_comparison.py` fetches one day of real Uber trips and
 compares the synthetic generator's output against it — not to match NYC's
 absolute numbers (different currency, city, and fleet scale guarantee they
-won't match), but to check whether the *shape* is comparable and explain the
-gaps that remain. Full write-up with charts:
-[Synthetic vs. Real: Validating the Trip Generator](https://claude.ai/code/artifact/32decd9f-e4e5-4dff-8026-0f12160bcd63).
+won't match), but to check whether the *shape* is comparable. Full write-up
+with charts:
+[Believable Shape, Not Borrowed Numbers](https://claude.ai/code/artifact/32decd9f-e4e5-4dff-8026-0f12160bcd63).
 
-Headline findings:
+**The first pass at this got something backwards.** Comparing to NYC and
+then recommending the generator's parameters move *toward* NYC's numbers
+defeats the point of using NYC only as a real-data availability convenience
+— the project's actual target is Bengaluru. The rule that survived a second
+pass: a *distributional form* (e.g. "trip distance should be right-skewed")
+generalizes across cities and is fair to borrow from anywhere; a *magnitude
+or structural ratio* (e.g. how heavily fare depends on distance vs.
+duration) does not, and should only change when grounded in a real
+Bengaluru-specific fact — not NYC's.
 
-- **Daily demand rhythm**: 96.4% cosine-similar. NYC has a midnight bump
-  (nightlife) the synthetic model's two-Gaussian shape structurally can't
-  produce.
-- **Wait time**: the synthetic run's median is *shorter* than NYC's (an
-  oversupplied toy fleet) but its tail is *longer* (15 zones pool supply far
-  less effectively than NYC's much deeper market) — short median, fat tail,
-  the opposite of what "oversupplied" would naively suggest.
-- **Trip distance**: real trips are heavily right-skewed (skewness 5.3); the
-  generator draws from a symmetric Normal (skewness 0.18). A concrete,
-  fixable gap — lognormal would match better.
-- **Fare structure**: fit with this project's own `fit_fare_model` on both.
-  Dollar amounts aren't comparable, but the distance:duration weighting is
-  (NYC 3.1×, synthetic 7.5×) and the fit quality gap is real (R² 0.77 real
-  vs ~1.0 synthetic — real fares have surge/tolls/promos noise a
-  deterministic synthetic fare never has to contend with).
-- **Driver pay fraction**: the assumed constant (0.75) lands close to NYC's
-  real median (0.72) — reassuring, but Namma Yatri's zero-commission model
-  means this NYC anchor likely doesn't transfer to Bengaluru specifically.
-- **The identifiability finding**: only 13% of NYC's own zone×zone×hour
-  cells have ≥5 trips, covering 48% of trips — even 454,813 trips in one day
-  isn't enough to densely populate a fine-grained OD-time cube. This is
-  supporting evidence for the project's actual thesis (identification is
-  hard even in a data-rich city), not a generator bug.
+What that produced, once real Bengaluru anchors were used instead of NYC's:
+
+- **Trip distance** (`sources/synthetic.py`): now derived from each trip's
+  simulated duration through Bengaluru's real average traffic speed
+  (TomTom Traffic Index: ~18-22 km/h, among the world's slowest), with
+  lognormal noise — not a NYC-shaped fix, a speed-based mechanism that's
+  fair to use anywhere. Skewness moved from 0.18 to 1.6. Also fixed a latent
+  inconsistency: distance and duration used to be drawn independently.
+- **Fare structure**: anchored to BBMP's real regulated auto-rickshaw meter
+  (₹36 for the first 2km, then ₹18/km, +50% surcharge 10pm-5am — effective
+  Aug 2025) instead of NYC's TLC formula. The distance:duration weighting
+  went from 7.5× to **36.7×** — the *opposite* direction from "move toward
+  NYC's 3.1×," because Indian auto meters have essentially no continuous
+  per-minute charge (only a waiting surcharge), unlike NYC's formula.
+- **Driver pay fraction**: 0.75 → **1.0**, matching Namma Yatri's own stated
+  zero-commission policy. The old 0.75 happened to sit close to NYC's real
+  median (0.72) — a coincidence the first pass mistook for reassurance,
+  masking a structurally different commission model.
+- **Nightlife demand bump**: added, peaking ~1am (BBMP raised bar/club
+  closing hours to 1am in 2024) rather than borrowing NYC's midnight shape.
+  Net effect: hourly-shape similarity to NYC *dropped* (96.4% → 93.6%) —
+  expected, since the goal was never to resemble NYC.
+- **Left alone, on purpose**: OD/zone concentration. No real Bengaluru hub
+  data exists to anchor a number, so the arbitrary near-uniform default
+  stays arbitrary rather than borrowing NYC's hub geography.
+- **The identifiability finding is unchanged and isn't a generator bug**:
+  only 13% of NYC's own zone×zone×hour cells have ≥5 trips, covering 48% of
+  trips — even 454,813 trips in one day isn't enough to densely populate a
+  fine-grained OD-time cube. Supporting evidence for the project's actual
+  thesis, not something to fix.
 
 ## Running it
 

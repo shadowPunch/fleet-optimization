@@ -14,7 +14,7 @@ def fit_fare_model(
     pickup_ts_col: str = "pickup_ts",
     dropoff_ts_col: str = "dropoff_ts",
     fare_col: str = "fare",
-    driver_pay_fraction: float = 0.75,
+    driver_pay_fraction: float = 1.0,  # matches models.FareModel's default — see its docstring
 ) -> FareModel:
     working = df.select([distance_col, pickup_ts_col, dropoff_ts_col, fare_col]).drop_nulls()
     duration_minutes = (pl.col(dropoff_ts_col) - pl.col(pickup_ts_col)).dt.total_seconds() / 60.0

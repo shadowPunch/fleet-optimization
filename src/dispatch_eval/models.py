@@ -103,13 +103,19 @@ class FareModel:
 
     The driver-pay fraction is a modeling assumption, not a fitted quantity —
     see docs/observability_table.md ("Driver pay" row) for why it can't be
-    fit from either data source.
+    fit from either data source. Defaults to 1.0, matching Namma Yatri's own
+    stated zero-commission policy (the project's real target platform) —
+    not NYC TLC's ~0.72-0.75, which was checked against real data and found
+    close only by coincidence (see analysis/nyc_reference_comparison.py):
+    NYC's driver-pay structure is a regulated commission cut, structurally
+    different from Namma Yatri's claimed 100%-to-driver model, not just a
+    different number.
     """
 
     intercept: float
     distance_coef: float
     duration_coef: float
-    driver_pay_fraction: float = 0.75
+    driver_pay_fraction: float = 1.0
 
     def expected_fare(self, distance_km: float, duration_minutes: float) -> float:
         return max(
