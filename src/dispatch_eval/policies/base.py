@@ -12,6 +12,8 @@ from __future__ import annotations
 
 from typing import Protocol
 
+import numpy as np
+
 from dispatch_eval.models import TravelTimeModel
 from dispatch_eval.simulator.entities import Request, Vehicle
 
@@ -34,6 +36,14 @@ class RepositioningPolicy(Protocol):
     serve toward better zones. The engine checks for this via `getattr` at
     each dispatch tick — a plain `DispatchPolicy` without a `reposition`
     method (B0-B2) is unaffected and never has this called.
+
+    `rng` is the engine's own random generator, not a policy-owned one —
+    B4's sampled lookahead needs randomness, and threading the engine's rng
+    through (rather than letting a policy carry its own separate stream)
+    keeps every random draw in a simulation run traceable to one seed. That
+    matters for P3's common-random-numbers requirement: a policy with a
+    hidden, independently-seeded rng of its own would introduce variation
+    across bootstrap replications that isn't controlled by the shared seed.
     """
 
     def reposition(
@@ -43,6 +53,7 @@ class RepositioningPolicy(Protocol):
         current_hour: int,
         travel_time_model: TravelTimeModel,
         zones: list[str],
+        rng: np.random.Generator,
     ) -> list[tuple[str, str]]:
         """Return a list of (vehicle_id, target_zone) repositioning moves."""
         ...

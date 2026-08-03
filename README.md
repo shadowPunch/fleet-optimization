@@ -61,6 +61,10 @@ src/dispatch_eval/
                               reposition(): idle vehicles get moved toward a
                               fluid target allocation (idle-vehicle share per
                               zone proportional to that zone's demand share)
+    sampling_lookahead.py       B4 — same wrapping pattern as B3, but
+                              reposition() samples one realization of near-
+                              future requests from the arrival model and
+                              Hungarian-matches idle vehicles to them directly
   calibration/
     arrivals.py               fit NHPP rates per (zone, day_type, bin);
                               index-of-dispersion diagnostic
@@ -158,10 +162,21 @@ Design choices worth knowing about:
     busy one, no-op when already balanced, the zero-total-rate edge case,
     delegation to the wrapped policy, and an end-to-end engine run that
     checks vehicles actually changed zones.
-  - **B4** (+ sampling-based lookahead) — not started; B2's value function
-    and B3's repositioning machinery both carry over, but B4's own
-    contribution (sampling future requests from the fitted arrival model and
-    solving an assignment over the samples) hasn't been designed yet.
+  - **B4** done: `policies/sampling_lookahead.py` is a sibling to B3, not a
+    wrapper around it — same "delegate dispatch, add reposition()" shape,
+    but `reposition` draws one Monte Carlo sample of the requests that might
+    arrive over the next `lookahead_seconds` (reusing
+    `NHPPArrivalModel.generate_arrival_minutes`, the exact method the engine
+    itself uses to generate real arrivals) and Hungarian-matches idle
+    vehicles directly to those sampled origin zones, instead of B3's smooth
+    expected-rate target share. This needed one protocol change:
+    `RepositioningPolicy.reposition` now also takes the engine's own `rng`
+    (B3 ignores it; B4 needs it for sampling) — a policy-owned separate rng
+    would have been simpler but would silently break P3's common-random-
+    numbers requirement, since its draws wouldn't be tied to the shared
+    per-replication seed. Tested: moving vehicles toward sampled demand, the
+    no-idle-vehicles and nothing-sampled edge cases, never "repositioning" a
+    vehicle to the zone it's already in, delegation, and an end-to-end run.
   - **B5** (clairvoyant offline upper bound) — not started, and harder than
     it looks: a *single-tick* bipartite match (like B1) isn't a valid
     multi-request-per-vehicle upper bound, but a fully general multi-hop
@@ -181,7 +196,7 @@ Design choices worth knowing about:
 
 ```bash
 uv sync              # installs polars, numpy, scipy, pytest, ruff
-uv run pytest -q     # 41 tests: engine correctness, calibration recovery, adapters, B1, tuning, B2, B3
+uv run pytest -q     # 47 tests: engine correctness, calibration recovery, adapters, B1, tuning, B2, B3, B4
 uv run ruff check .  # lint
 ```
 
@@ -204,6 +219,5 @@ df = generate_synthetic_trips(
 2. Run P1 calibration against the real Delhi NCR data and validate against
    held-out days (KS distance on wait time, trip/vehicle-hour, hour-of-day
    shape — see the project plan's P1 validation section).
-3. P2: B4 (sampling-based lookahead — design not started), then the
-   time-expanded clairvoyant solver for B5 — see the status section above
-   for what each actually requires.
+3. P2: the time-expanded clairvoyant solver for B5 — see the status section
+   above for what it requires. That's the last rung of the baseline ladder.

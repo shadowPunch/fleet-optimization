@@ -76,7 +76,9 @@ class FluidZoneBalancingPolicy:
         current_hour: int,
         travel_time_model: TravelTimeModel,
         zones: list[str],
+        rng: np.random.Generator,
     ) -> list[tuple[str, str]]:
+        del rng  # fluid balancing is deterministic given current state; unused here
         if not idle_vehicles:
             return []
 

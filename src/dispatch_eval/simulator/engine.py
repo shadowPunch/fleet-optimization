@@ -169,14 +169,16 @@ class SimulationEngine:
                 self._assign(vehicle_id, request_id, event.time)
 
         # Repositioning is optional: only policies that define `reposition`
-        # (e.g. B3) get this call. Recomputed after dispatch, since vehicles
-        # just assigned above are no longer idle and shouldn't be reconsidered.
+        # (e.g. B3, B4) get this call. Recomputed after dispatch, since
+        # vehicles just assigned above are no longer idle and shouldn't be
+        # reconsidered. `self.rng` is passed through rather than letting a
+        # policy own its own stream — see RepositioningPolicy's docstring.
         reposition_fn = getattr(self.policy, "reposition", None)
         if reposition_fn is not None:
             still_idle = [v for v in self.vehicles.values() if v.status == VehicleStatus.IDLE]
             if still_idle:
                 for vehicle_id, target_zone in reposition_fn(
-                    still_idle, event.time, hour, self.travel_time_model, self.zones
+                    still_idle, event.time, hour, self.travel_time_model, self.zones, self.rng
                 ):
                     self.reposition_vehicle(vehicle_id, target_zone, event.time)
 
