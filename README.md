@@ -50,6 +50,9 @@ src/dispatch_eval/
   policies/
     base.py                  DispatchPolicy protocol (same shape for B0-B5)
     nearest_idle.py           B0 — nearest idle vehicle, greedy, no batching
+    batched_hungarian.py       B1 — batched optimal assignment (scipy Hungarian),
+                              tunable batch window (Δ = dispatch_interval_seconds)
+                              and matching radius r
   calibration/
     arrivals.py               fit NHPP rates per (zone, day_type, bin);
                               index-of-dispersion diagnostic
@@ -60,6 +63,9 @@ src/dispatch_eval/
                               matters: fleet size, matched to observed
                               wait-time median/p90; plus a KS-distance helper
                               for validation
+    tuning.py                  fixed-budget random-search harness so every
+                              policy in the ladder gets an identical tuning
+                              budget (the P2 parity condition)
   sources/
     synthetic.py              ground-truth generator + simulator-backed
                               trip generation, for development and tests
@@ -98,13 +104,43 @@ Design choices worth knowing about:
   synthetic data: event-driven engine, B0 policy, all five input-model
   fits, fleet-size calibration. **Not yet run against real Delhi NCR /
   Bengaluru data** (not downloaded in this environment).
-- **P0.1, P2-P5** — not started.
+- **P2** (baseline ladder) — in progress:
+  - **B0** done (P1).
+  - **B1** done: batched Hungarian assignment (`policies/batched_hungarian.py`)
+    plus a generic fixed-budget tuning harness (`calibration/tuning.py`),
+    tested for assignment correctness (including a case where greedy
+    nearest-idle is provably worse than the batched optimum), radius-cutoff
+    behaviour, and an end-to-end tuning run.
+  - **B2** (min-cost flow + value-function correction) — not started. This
+    one is tractable within the existing per-tick `DispatchPolicy` interface
+    (same Hungarian machinery as B1, just a value-corrected cost matrix), but
+    needs a value function first: a backward-induction Bellman recursion
+    `V(zone, time_bin)` over the fitted arrival/OD/fare models, plus a
+    value-of-time weighting to make "expected future value" and "pickup
+    travel time" commensurable in one cost. Both are real design decisions,
+    not yet made.
+  - **B3** (+ zone-balancing repositioning) and **B4** (+ sampling-based
+    lookahead) — not started; depend on B2's value function existing first.
+  - **B5** (clairvoyant offline upper bound) — not started, and harder than
+    it looks: a *single-tick* bipartite match (like B1) isn't a valid
+    multi-request-per-vehicle upper bound, but a fully general multi-hop
+    min-cost flow needs per-request nodes split into in/out pairs to respect
+    flow conservation, and edge costs into a request's "out" side are
+    state-dependent (they depend on *when* that request was picked up, which
+    is exactly what's being solved for) — not a fixed-cost-graph problem in
+    the naive formulation. The tractable fix sketched out but not yet built:
+    time-expand the graph (nodes = (zone, time bin)) and pin each request's
+    exit node pessimistically to its patience deadline rather than its true
+    (solution-dependent) pickup time — gives a valid, honestly-conservative
+    achievable offline schedule rather than a razor-tight bound, which is a
+    fair trade at this project's scale.
+- **P0.1, P3-P5** — not started.
 
 ## Running it
 
 ```bash
 uv sync              # installs polars, numpy, scipy, pytest, ruff
-uv run pytest -q     # 19 tests: engine correctness, calibration recovery, adapters
+uv run pytest -q     # 27 tests: engine correctness, calibration recovery, adapters, B1, tuning
 uv run ruff check .  # lint
 ```
 
@@ -127,4 +163,6 @@ df = generate_synthetic_trips(
 2. Run P1 calibration against the real Delhi NCR data and validate against
    held-out days (KS distance on wait time, trip/vehicle-hour, hour-of-day
    shape — see the project plan's P1 validation section).
-3. P2: implement the B1-B5 baseline ladder with enforced tuning parity.
+3. P2: value function for B2 (unlocks B2-B4), then the time-expanded
+   clairvoyant solver for B5 — see the status section above for what each
+   actually requires.

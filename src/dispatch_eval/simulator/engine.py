@@ -35,6 +35,17 @@ class SimulationResult:
     def wait_times(self) -> np.ndarray:
         return np.array([r.wait_time for r in self.completed_requests])
 
+    @property
+    def mean_wait_seconds(self) -> float:
+        """Tuning/comparison objective. inf when nothing completed, so a
+        policy that serves nobody never looks good under minimization."""
+        wt = self.wait_times
+        return float(wt.mean()) if wt.size else float("inf")
+
+    @property
+    def fraction_served(self) -> float:
+        return len(self.completed_requests) / self.total_requests if self.total_requests else 0.0
+
 
 class SimulationEngine:
     def __init__(
