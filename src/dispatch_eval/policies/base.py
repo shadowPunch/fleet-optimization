@@ -27,3 +27,22 @@ class DispatchPolicy(Protocol):
     ) -> list[tuple[str, str]]:
         """Return a list of (vehicle_id, request_id) assignments to make now."""
         ...
+
+
+class RepositioningPolicy(Protocol):
+    """Optional second capability (B3+): move idle vehicles with nothing to
+    serve toward better zones. The engine checks for this via `getattr` at
+    each dispatch tick — a plain `DispatchPolicy` without a `reposition`
+    method (B0-B2) is unaffected and never has this called.
+    """
+
+    def reposition(
+        self,
+        idle_vehicles: list[Vehicle],
+        current_time: float,
+        current_hour: int,
+        travel_time_model: TravelTimeModel,
+        zones: list[str],
+    ) -> list[tuple[str, str]]:
+        """Return a list of (vehicle_id, target_zone) repositioning moves."""
+        ...

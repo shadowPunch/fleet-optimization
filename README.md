@@ -48,7 +48,8 @@ src/dispatch_eval/
     runner.py                 wires fitted models + a policy + fleet size
                               into one run_simulation() call
   policies/
-    base.py                  DispatchPolicy protocol (same shape for B0-B5)
+    base.py                  DispatchPolicy protocol (same shape for B0-B5),
+                              optional RepositioningPolicy protocol (B3+)
     nearest_idle.py           B0 — nearest idle vehicle, greedy, no batching
     batched_hungarian.py       B1 — batched optimal assignment (scipy Hungarian),
                               tunable batch window (Δ = dispatch_interval_seconds)
@@ -56,6 +57,10 @@ src/dispatch_eval/
     value_corrected_hungarian.py B2 — B1's assignment, but the cost matrix adds
                               a value-function correction so a policy can
                               avoid stranding a vehicle in a low-demand zone
+    fluid_zone_balancing.py    B3 — wraps any DispatchPolicy unchanged, adds
+                              reposition(): idle vehicles get moved toward a
+                              fluid target allocation (idle-vehicle share per
+                              zone proportional to that zone's demand share)
   calibration/
     arrivals.py               fit NHPP rates per (zone, day_type, bin);
                               index-of-dispersion diagnostic
@@ -137,10 +142,26 @@ Design choices worth knowing about:
     getting a strictly lower cost-to-go than a quiet one, monotonic decay
     as the horizon closes, the value correction actually flipping a tied
     pickup-cost choice toward the better destination, and an end-to-end run.
-  - **B3** (+ zone-balancing repositioning) and **B4** (+ sampling-based
-    lookahead) — not started, but B2's value function unblocks both now
-    (e.g. B3 could reposition an idle vehicle toward whichever reachable
-    zone has the lowest `C`).
+  - **B3** done: `policies/fluid_zone_balancing.py` wraps any dispatch
+    policy unchanged (in practice B2) and adds a genuinely different
+    mechanism — not value-function-guided, deliberately, to keep it
+    distinct from B2 rather than just "B2, but chase low `C`." Each zone's
+    target share of idle vehicles is set proportional to its share of total
+    expected arrival rate right now (largest-remainder apportionment to
+    integers), and idle vehicles move from over- to under-supplied zones via
+    the same least-cost bipartite assignment B1/B2 use, just matching movers
+    to target zones instead of vehicles to requests. Required one engine
+    change: `_handle_dispatch_tick` now also checks for an optional
+    `policy.reposition(...)` (via `getattr`, so B0-B2 are unaffected) and
+    calls it on whatever's still idle after normal dispatch. Tested:
+    apportionment rounding, moving vehicles out of a zero-demand zone into a
+    busy one, no-op when already balanced, the zero-total-rate edge case,
+    delegation to the wrapped policy, and an end-to-end engine run that
+    checks vehicles actually changed zones.
+  - **B4** (+ sampling-based lookahead) — not started; B2's value function
+    and B3's repositioning machinery both carry over, but B4's own
+    contribution (sampling future requests from the fitted arrival model and
+    solving an assignment over the samples) hasn't been designed yet.
   - **B5** (clairvoyant offline upper bound) — not started, and harder than
     it looks: a *single-tick* bipartite match (like B1) isn't a valid
     multi-request-per-vehicle upper bound, but a fully general multi-hop
@@ -160,7 +181,7 @@ Design choices worth knowing about:
 
 ```bash
 uv sync              # installs polars, numpy, scipy, pytest, ruff
-uv run pytest -q     # 34 tests: engine correctness, calibration recovery, adapters, B1, tuning, B2
+uv run pytest -q     # 41 tests: engine correctness, calibration recovery, adapters, B1, tuning, B2, B3
 uv run ruff check .  # lint
 ```
 
@@ -183,7 +204,6 @@ df = generate_synthetic_trips(
 2. Run P1 calibration against the real Delhi NCR data and validate against
    held-out days (KS distance on wait time, trip/vehicle-hour, hour-of-day
    shape — see the project plan's P1 validation section).
-3. P2: B3 (zone-balancing repositioning) and B4 (sampling-based lookahead),
-   both now unblocked by B2's value function, then the time-expanded
-   clairvoyant solver for B5 — see the status section above for what each
-   actually requires.
+3. P2: B4 (sampling-based lookahead — design not started), then the
+   time-expanded clairvoyant solver for B5 — see the status section above
+   for what each actually requires.

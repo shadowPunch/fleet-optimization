@@ -159,12 +159,26 @@ class SimulationEngine:
     def _handle_dispatch_tick(self, event: Event) -> None:
         waiting = [r for r in self.requests.values() if r.status == RequestStatus.WAITING]
         idle = [v for v in self.vehicles.values() if v.status == VehicleStatus.IDLE]
-        if not waiting or not idle:
-            return
         hour = self._hour_of(event.time)
-        assignments = self.policy.dispatch(waiting, idle, event.time, hour, self.travel_time_model)
-        for vehicle_id, request_id in assignments:
-            self._assign(vehicle_id, request_id, event.time)
+
+        if waiting and idle:
+            assignments = self.policy.dispatch(
+                waiting, idle, event.time, hour, self.travel_time_model
+            )
+            for vehicle_id, request_id in assignments:
+                self._assign(vehicle_id, request_id, event.time)
+
+        # Repositioning is optional: only policies that define `reposition`
+        # (e.g. B3) get this call. Recomputed after dispatch, since vehicles
+        # just assigned above are no longer idle and shouldn't be reconsidered.
+        reposition_fn = getattr(self.policy, "reposition", None)
+        if reposition_fn is not None:
+            still_idle = [v for v in self.vehicles.values() if v.status == VehicleStatus.IDLE]
+            if still_idle:
+                for vehicle_id, target_zone in reposition_fn(
+                    still_idle, event.time, hour, self.travel_time_model, self.zones
+                ):
+                    self.reposition_vehicle(vehicle_id, target_zone, event.time)
 
     def _assign(self, vehicle_id: str, request_id: str, current_time: float) -> None:
         vehicle = self.vehicles[vehicle_id]
