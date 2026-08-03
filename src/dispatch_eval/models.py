@@ -1,0 +1,139 @@
+"""Runtime input models.
+
+These are the objects the simulator actually calls during a run: an arrival
+process, an OD (destination-choice) model, a travel-time model, and an
+abandonment (patience) model. Each is deliberately a plain, picklable data
+object plus a couple of methods — no framework.
+
+`dispatch_eval.calibration` fits these from trip data. `dispatch_eval.sources.synthetic`
+builds them directly from chosen ground-truth parameters, so the calibration
+routines have something with a known answer to be tested against.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+
+import numpy as np
+
+SECONDS_PER_MINUTE = 60
+
+
+@dataclass
+class NHPPArrivalModel:
+    """Piecewise-constant-rate non-homogeneous Poisson process per zone.
+
+    `rates[(zone, day_type, bin_index)]` is the arrival rate in requests per
+    minute for that (zone, day_type, time bin). `bin_index = minute_of_day //
+    bin_minutes`.
+    """
+
+    rates: dict[tuple[str, str, int], float]
+    bin_minutes: int = 15
+
+    def rate_per_minute(self, zone: str, day_type: str, minute_of_day: float) -> float:
+        bin_index = int(minute_of_day // self.bin_minutes)
+        return self.rates.get((zone, day_type, bin_index), 0.0)
+
+    def generate_arrival_minutes(
+        self,
+        zone: str,
+        day_type: str,
+        start_minute: float,
+        end_minute: float,
+        rng: np.random.Generator,
+    ) -> list[float]:
+        """Sample arrival times (minutes since midnight) in [start_minute, end_minute)."""
+        arrivals: list[float] = []
+        bin_start = (int(start_minute) // self.bin_minutes) * self.bin_minutes
+        while bin_start < end_minute:
+            bin_end = min(bin_start + self.bin_minutes, end_minute)
+            window_start = max(bin_start, start_minute)
+            window_len = bin_end - window_start
+            if window_len > 0:
+                rate = self.rate_per_minute(zone, day_type, window_start)
+                n = rng.poisson(rate * window_len)
+                if n > 0:
+                    arrivals.extend(rng.uniform(window_start, bin_end, size=n).tolist())
+            bin_start += self.bin_minutes
+        arrivals.sort()
+        return arrivals
+
+
+@dataclass
+class ODModel:
+    """Row-normalised, smoothed OD distribution: destination | (origin, time bin)."""
+
+    dest_probs: dict[tuple[str, int], dict[str, float]]
+    fallback_probs: dict[str, float] = field(default_factory=dict)
+
+    def sample_destination(self, origin_zone: str, time_bin: int, rng: np.random.Generator) -> str:
+        probs = self.dest_probs.get((origin_zone, time_bin), self.fallback_probs)
+        if not probs:
+            return origin_zone
+        zones = list(probs.keys())
+        p = np.array(list(probs.values()))
+        return zones[rng.choice(len(zones), p=p / p.sum())]
+
+
+@dataclass
+class TravelTimeModel:
+    """Lognormal travel time per (origin, dest, hour), log-seconds parameters."""
+
+    params: dict[tuple[str, str, int], tuple[float, float]]
+    fallback_params: tuple[float, float]
+
+    def _mu_sigma(self, origin: str, dest: str, hour: int) -> tuple[float, float]:
+        if origin == dest:
+            return (float(np.log(60.0)), 0.3)
+        return self.params.get((origin, dest, hour), self.fallback_params)
+
+    def expected(self, origin: str, dest: str, hour: int) -> float:
+        mu, sigma = self._mu_sigma(origin, dest, hour)
+        return float(np.exp(mu + sigma**2 / 2))
+
+    def sample(self, origin: str, dest: str, hour: int, rng: np.random.Generator) -> float:
+        mu, sigma = self._mu_sigma(origin, dest, hour)
+        return float(rng.lognormal(mu, sigma))
+
+
+@dataclass
+class FareModel:
+    """Fare as a linear function of distance and duration, plus a driver-pay split.
+
+    The driver-pay fraction is a modeling assumption, not a fitted quantity —
+    see docs/observability_table.md ("Driver pay" row) for why it can't be
+    fit from either data source.
+    """
+
+    intercept: float
+    distance_coef: float
+    duration_coef: float
+    driver_pay_fraction: float = 0.75
+
+    def expected_fare(self, distance_km: float, duration_minutes: float) -> float:
+        return max(
+            0.0,
+            self.intercept
+            + self.distance_coef * distance_km
+            + self.duration_coef * duration_minutes,
+        )
+
+    def expected_driver_pay(self, distance_km: float, duration_minutes: float) -> float:
+        return self.expected_fare(distance_km, duration_minutes) * self.driver_pay_fraction
+
+
+@dataclass
+class AbandonmentModel:
+    """Exponential patience clock: one point on the structural-ambiguity axis.
+
+    The project plan treats the abandonment hazard as latent and mandates
+    running the whole study under 3-5 specifications spanning plausible
+    behaviour (see P1). `mean_patience_seconds` is that one free parameter;
+    build several `AbandonmentModel` instances to sweep it.
+    """
+
+    mean_patience_seconds: float
+
+    def sample_patience(self, rng: np.random.Generator) -> float:
+        return float(rng.exponential(self.mean_patience_seconds))

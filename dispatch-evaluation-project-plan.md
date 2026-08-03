@@ -27,8 +27,8 @@ Two properties make this a good thesis:
 | C2 | **Ranking-flip experiment.** Bootstrap input models × common random numbers × k policies. Report the distribution over rankings, not a winner. Report the indifference set at level α. | C1 | Low — this is the centrepiece |
 | C3 | **Decision currency.** Express every policy delta as Δfleet-equivalent, Δ$/day, Δdriver-hours, with intervals. | C2 | Low |
 | C4 | **Compute-parity frontier.** Quality vs. decision-latency budget, at a fixed real-time dispatch cycle. Charge every policy for its own latency. | P2 | Medium |
-| C5 | **Distributional accounting.** Zone-level decomposition of the mean gain; Simpson checks; join to ACS demographics. Who pays for the average improvement. | C2 | Low |
-| C6 | **Coarsening experiment.** Artificially degrade NYC data to Chicago's resolution (15-min rounding, tract aggregation) and measure how much measurement coarsening alone moves the ranking. | C2 | Low, cheap, high value |
+| C5 | **Distributional accounting.** Ward-level decomposition of the mean gain; Simpson checks; join to Census of India / BBMP ward demographics. Who pays for the average improvement. | C2 | Low |
+| C6 | **Coarsening ladder.** Start from Delhi NCR's synthetic trip-level resolution and coarsen it step-by-step toward what Bengaluru's real open data actually offers (15-min rounding → ward-level OD → ward-only aggregate counts, no timestamps at all). Measure how much of the ranking survives at each rung. | C2 | Low, cheap, high value |
 
 C2 is the paper. C1 is the setup. C3–C6 are what turn it from a statistics note into something an operator or a reviewer finds decision-relevant.
 
@@ -36,34 +36,31 @@ C2 is the paper. C1 is the setup. C3–C6 are what turn it from a statistics not
 
 ## 2. Data
 
-### Primary: NYC TLC High Volume FHV trip records
-`fhvhv_tripdata_YYYY-MM.parquet`, published monthly with roughly a two-month lag.
+There is no Indian-city equivalent of NYC TLC's High Volume FHV records — no regulator publishes trip-level ride-hailing data for any Indian city with a `request_datetime`/`pickup_datetime` split. That fact is itself load-bearing for this project (see the note at the end of this section), not a gap to paper over. Two sources fill the primary/secondary roles instead, and — critically — they are **inverted in resolution** relative to the original NYC(fine)/Chicago(coarse) plan: the only *real* source is coarse, and the only *fine-grained* source is synthetic.
 
-Why this and not Chicago as primary: it contains `request_datetime` and `pickup_datetime`, which means **rider wait time is directly observable at the trip level**. That is the single most important validation target and it is what makes calibration falsifiable rather than decorative.
+### Primary (real, coarse): Bengaluru — Namma Yatri Open Data
+[nammayatri.in/open](https://nammayatri.in/open/) publishes operational statistics from Namma Yatri, a live, open-source, commission-free auto-rickshaw dispatch platform (Direct-to-Driver, built on the ONDC/Beckn protocol). This is real operational data from an actual running dispatch system, which is why it anchors the project — but it is **aggregated at the ward level**, not trip-level:
 
-Fields that matter:
+- Ride requests, bookings, completed trips, cancellations, fare estimates, and driver earnings, aggregated per ward and time window.
+- No `request_datetime`/`pickup_datetime` split at all — wait time is **not directly observable**, not even conditionally on matched trips. This is a step worse than NYC's censoring problem: NYC censors unmatched requests but still gives trip-level timestamps for matched ones; Bengaluru's open data gives neither.
+- No confirmed OD matrix — published figures appear to be per-ward marginals (requests, completions, cancellations by ward), not ward-to-ward flows. Treat OD structure as unavailable from this source until verified against the actual export.
+- A scraped snapshot exists as a Kaggle mirror (`arshdkhan/namma-yatri-bengaluru-ward-wise-ride-open-data`); treat it as a convenience copy of the same aggregates, not an independent source.
 
-- `request_datetime`, `pickup_datetime`, `dropoff_datetime` → wait time, trip duration
-- `PULocationID`, `DOLocationID` → 263 taxi zones, OD structure
-- `trip_miles`, `trip_time` → travel-time matrix estimation
-- `base_passenger_fare`, `driver_pay`, `tolls`, `congestion_surcharge`, `cbd_congestion_fee` → revenue and cost sides
-- `shared_request_flag`, `shared_match_flag` → pooling, if you extend
-- `hvfhs_license_num` → operator; **filter to a single operator**, otherwise you are simulating a market, not a fleet
+Use this source for: validating the simulator's *aggregate* outputs (ward-level trip volume, cancellation rate, fare range) against something real, and for C5's demographic join (Census of India / BBMP ward boundaries and demographics, in place of ACS tracts).
 
-Caveats to state explicitly in the report, not bury:
+### Secondary (synthetic, fine): Delhi NCR — Kaggle ride-booking dataset
+`shayanzk/ola-ride-bookings-dataset` (Kaggle) contains trip-level rows with Delhi NCR locations (Okhla, Barakhamba Road, Cyber Hub, Saket, etc.), booking timestamps, pickup/drop locations, distances, fares, and trip status. **Treat this as synthetic, not real operational data**, until proven otherwise — Ola/Uber do not publish real trip microdata for India, the dataset carries no data-provenance disclosure, and its shape matches the generic templated datasets Kaggle users generate for BI/SQL portfolio practice, not a real platform export.
 
-- `on_scene_datetime` is only reliably populated for accessible vehicles per the data dictionary. Use `request → pickup`, not `request → on_scene`.
-- **Only matched trips appear.** Abandoned and unserved requests are absent. Every wait distribution you fit is conditional on eventual service. This is a censoring problem, not a nuisance — it biases calibration toward optimistic supply and it belongs in the structural ambiguity set (C1's third component).
-- Supply is unobserved. Fleet size is a latent parameter, not a known input.
+Role: it has the right *shape* (trip-level rows, timestamps, OD, fare) to exercise the full simulator + calibration + bootstrap harness end-to-end. Use it as a structural test-bed and as the top rung of the C6 coarsening ladder — **never as evidence about real Delhi ride-hailing**, and never let a headline result rest on it alone. Any claim calibrated against it must be labeled synthetic-data in every figure and table it touches.
 
-### Secondary: Chicago TNP Trips
-Census-tract OD, times rounded to 15 minutes, fares rounded. Two uses:
-
-1. External validity — does the C2 result replicate in a second city?
-2. C6 — Chicago's documented coarsening is a natural experiment. Coarsen NYC to match it and measure the ranking shift attributable to measurement resolution alone.
+### The inversion, and why it's a finding, not just a workaround
+The original plan's C6 ("coarsen NYC to Chicago's resolution and measure the shift") assumed you start from a real fine-grained baseline and degrade it. Here, the real data (Bengaluru) *is already at the degraded end* — coarser than even Chicago's 15-minute rounding, since it has no trip-level timestamps or OD at all. So C6 becomes a ladder rather than a single before/after comparison: start from Delhi NCR's (synthetic) trip-level resolution, coarsen in steps — 15-minute rounding, ward-level OD, ward-only aggregate counts with no timestamps — and find where in that ladder the ranking stops being identifiable. The bottom rung of the ladder is exactly what Bengaluru's real open data provides. If identifiability collapses before you reach that rung, it says something concrete and citable about whether this class of study is even possible on the public data that actually exists for Indian cities — which is a stronger and more honest version of the original point than "does it replicate in a second city."
 
 ### Network
-Do **not** start with an OSMnx road graph. Start with a zone-to-zone, hour-of-day travel-time matrix estimated directly from `trip_time` in the trip records. It is calibratable against the same data that produced it, it is fast, and it avoids the free-flow-speed fiction. Road network is a Phase 5 extension only if C4 needs it.
+Same principle as the original plan: do **not** start with an OSMnx road graph. Build a zone-to-zone (ward-to-ward), hour-of-day travel-time matrix from whichever source has trip-level `trip_time`/timestamps — currently only the Delhi NCR synthetic set qualifies, so the network model is provisional on synthetic data until a real trip-level source is found or purchased. Flag every figure derived from it accordingly. Road network is a Phase 5 extension only if C4 needs it.
+
+### Engineering consequence
+Because neither source can be authenticated or downloaded automatically from this environment (Kaggle requires a personal API token; Namma Yatri's aggregates require a scrape), the codebase is built against one **canonical internal trip-record schema**, with a source-specific adapter per dataset and a synthetic generator that matches the same schema for development and tests. This means P1 can be built, tested, and validated end-to-end now; swapping in the real Delhi NCR CSV or a fresh Bengaluru scrape later is a matter of writing one adapter each, not restructuring the simulator. See `docs/observability_table.md` for the full quantity-by-quantity observability audit against this data landscape.
 
 ---
 
@@ -88,7 +85,7 @@ Outcome: a one-page memo listing the closest 5 papers and the precise sentence d
 
 ### P1 — Minimal digital twin + calibration (week 3–5)
 
-Deliberately minimal. Event-driven, `heapq`-based, zone-level, single operator, no road graph.
+Deliberately minimal. Event-driven, `heapq`-based, ward-level (zone-level), single operator, no road graph.
 
 **State:** vehicles (idle / en-route-to-pickup / occupied / repositioning, each with a zone and an available-at timestamp), open requests (origin zone, destination zone, request time, patience clock).
 
@@ -98,19 +95,20 @@ Deliberately minimal. Event-driven, `heapq`-based, zone-level, single operator, 
 
 | Input | Model | Notes |
 |---|---|---|
-| Request arrivals | Non-homogeneous Poisson per zone, piecewise-constant rate by (zone, day-type, 15-min bin) | Test the Poisson assumption — index of dispersion by zone. Overdispersion is common and belongs in the ambiguity set |
-| Destination | Row-normalised OD matrix per (origin zone, time bin) | Smoothing/shrinkage needed for sparse zone pairs |
-| Travel time | Lognormal per (origin, destination, hour) fitted to `trip_time` | Keep the variance, not just the mean |
-| Fare / driver pay | Regression on distance, duration, time bin | Needed for C3 |
+| Request arrivals | Non-homogeneous Poisson per zone, piecewise-constant rate by (zone, day-type, 15-min bin) | Test the Poisson assumption — index of dispersion by zone. Overdispersion is common and belongs in the ambiguity set. Fittable against Bengaluru ward counts (real) or Delhi NCR synthetic rows |
+| Destination | Row-normalised OD matrix per (origin zone, time bin) | Smoothing/shrinkage needed for sparse zone pairs. **Only fittable from the Delhi NCR synthetic set** — no confirmed OD structure in Bengaluru's published aggregates |
+| Travel time | Lognormal per (origin, destination, hour) fitted to `trip_time` | Keep the variance, not just the mean. **Synthetic-data-only until a real trip-level source exists** — flag every downstream number derived from it |
+| Fare / driver pay | Regression on distance, duration, time bin | Needed for C3. Fit against Delhi NCR synthetic rows; sanity-check the fare *range* against Bengaluru's published fare estimates |
 | Fleet size | **Latent — calibrated** | See below |
 | Abandonment hazard | **Latent — structural ambiguity** | See below |
 
-**Calibration of latent quantities.** Fleet size and the abandonment hazard are not identified separately by matched-trip data alone. Handle this honestly:
+**Calibration of latent quantities.** Fleet size and the abandonment hazard are not identified separately by matched-trip data alone, and — with this data landscape — the wait-time distribution itself is only observable in the synthetic Delhi NCR set (via its VTAT-style pickup-wait field, itself unverified). Handle this honestly, and treat it as one level more uncertain than the original NYC-based plan assumed:
 
-- Calibrate fleet size to match the *observed wait-time distribution* (not just its mean — match the median and the 90th percentile) under the nearest-idle baseline, since first-dispatch is closest to what generated the data.
+- Calibrate fleet size to match the *observed wait-time distribution* (not just its mean — match the median and the 90th percentile) under the nearest-idle baseline, using the Delhi NCR synthetic set. Label every fleet-size figure downstream of this as synthetic-calibrated until a real trip-level source replaces it.
+- Where a real anchor exists (Bengaluru ward-level trip counts and cancellation rates), use it as an independent sanity check on the simulator's aggregate output, not as a calibration target for wait time.
 - Treat the abandonment hazard as a structural axis: run the whole study under 3–5 abandonment specifications spanning plausible behaviour. Any conclusion that holds across all of them is robust; any that does not is a finding.
 
-**Validation, held-out days:** wait-time distribution (KS distance, not mean-only), trips served per vehicle-hour, empty-mile fraction, revenue per vehicle-hour, hour-of-day shape. Pre-register the acceptance thresholds *before* running validation. If validation fails badly, that is a publishable result about the identifiability of these simulators, not a project failure — write it up.
+**Validation, held-out days:** wait-time distribution (KS distance, not mean-only) against held-out Delhi NCR synthetic rows; ward-level trip counts and cancellation rate against Bengaluru's published aggregates; trips served per vehicle-hour, empty-mile fraction, revenue per vehicle-hour, hour-of-day shape. Pre-register the acceptance thresholds *before* running validation. If validation fails badly, that is a publishable result about the identifiability of these simulators from public Indian ride-hailing data, not a project failure — write it up.
 
 ### P2 — Baseline ladder with enforced parity (week 6–7)
 
@@ -153,7 +151,7 @@ Common random numbers across policies within (b, r) is non-negotiable — it is 
 - **Variance decomposition (C1):** total variance of the pairwise difference, split into within-θ (intrinsic) and across-θ (input uncertainty) components. Report the ratio. The headline number is something like "input uncertainty contributes Nx the variance of simulation noise."
 - **Minimum detectable effect curve:** as a function of days of real data used for fitting, the smallest true effect whose sign is resolved at 95%. This is the practically useful artefact — it tells a future researcher how much data they need before a 2% claim means anything.
 
-Computational note: B×R×|policies| simulations is the budget driver. Use a metamodel-assisted variant if it blows up — fit a cheap surrogate over θ-space and reserve full simulation for a designed subset. Start with a short horizon (a 6-hour Manhattan weekday peak) to make the full factorial feasible, then extend.
+Computational note: B×R×|policies| simulations is the budget driver. Use a metamodel-assisted variant if it blows up — fit a cheap surrogate over θ-space and reserve full simulation for a designed subset. Start with a short horizon (a 6-hour weekday peak over the central-Bengaluru or Delhi NCR study area) to make the full factorial feasible, then extend.
 
 ### P4 — Decision translation (week 10–12)
 
@@ -161,9 +159,9 @@ Computational note: B×R×|policies| simulations is the budget driver. Use a met
 
 **C4 — Compute parity.** Fix a real-time dispatch cycle (production systems run on cycles of a couple of seconds). For each policy, measure wall-clock decision time as a function of open requests and idle vehicles. Then: at each fleet scale, which policies can actually complete a decision inside the budget? Degrade the ones that cannot (truncate the candidate graph, coarsen the radius) and re-measure quality. Plot quality vs. decision-latency budget. Expect some optimal-in-principle methods to lose once charged for their latency — and expect the crossover point to move with fleet size. This is a clean, underreported result.
 
-**C5 — Distributional accounting.** Decompose the mean wait-time gain by zone. Check for Simpson reversals (mean improves, majority of zones worsen). Join taxi zones to ACS tract demographics via a crosswalk and report the gain distribution across income and race quantiles. State clearly that this is an association in a simulation, not a causal claim about a real platform.
+**C5 — Distributional accounting.** Decompose the mean wait-time gain by zone/ward. Check for Simpson reversals (mean improves, majority of zones worsen). Join wards to Census of India / BBMP demographic data via a crosswalk and report the gain distribution across income and social-category quantiles (the ACS income/race split has no direct Indian-census analogue — use whatever socioeconomic strata the ward-level census or SECC data actually supports, and say so explicitly rather than forcing a US-shaped category system onto Indian data). State clearly that this is an association in a simulation, not a causal claim about a real platform.
 
-**C6 — Coarsening.** Re-run P3 with input models fitted to NYC data artificially coarsened to Chicago's published resolution (15-min time rounding, tract-level aggregation, fare rounding). Report the ranking shift attributable to measurement resolution alone. Cheap, and it directly answers "can you even do this study on Chicago data?"
+**C6 — Coarsening ladder.** Re-run P3 with input models fitted to the Delhi NCR synthetic data artificially coarsened step by step toward Bengaluru's real published resolution (15-min time rounding → ward-level OD only → ward-only aggregate counts with no timestamps, fare rounding at each step). Report the ranking shift at each rung. Cheap, and it directly answers "can you even do this study on the public data that actually exists for an Indian city?" — with the answer graded rather than binary.
 
 ### P5 — RL entry (optional, week 13+)
 
@@ -181,7 +179,7 @@ Expect the outcome that RL sits inside the indifference set. That is a fine outc
 ## 4. Engineering notes
 
 - **Language:** Python. `polars` for the trip data (20M+ rows/month), `heapq` for the event queue, `scipy.optimize.linear_sum_assignment` for Hungarian, `networkx` or `ortools` min-cost flow, `scikit-optimize`/`optuna` for BO, `gymnasium` + `stable-baselines3` for P5.
-- **Scale control:** Manhattan-only, single operator, weekday, 6-hour peak window for the main study. Extend to full-borough and full-day for the final robustness section only.
+- **Scale control:** a single central-city ward cluster (Bengaluru) or the Delhi NCR synthetic study area, single operator, weekday, 6-hour peak window for the main study. Extend to full-city and full-day for the final robustness section only.
 - **Reproducibility discipline:** seed everything; store `(policy, θ_bootstrap_index, replication_seed) → metrics` in a single parquet results table; never recompute a headline number from a notebook cell. One `run_study.py` that regenerates every figure from raw data.
 - **Pre-registration:** write down validation acceptance thresholds, the α for the indifference set, and the primary metric *before* running P1 validation and P3. Commit the file with a timestamp. This is the process correction that mattered most in the superconductivity work and it matters more here, because the whole paper is a claim about statistical discipline.
 

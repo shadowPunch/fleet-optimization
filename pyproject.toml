@@ -1,0 +1,36 @@
+[project]
+name = "dispatch-eval"
+version = "0.1.0"
+description = "Input-uncertainty-aware evaluation harness for ride-hailing dispatch policies"
+readme = "README.md"
+authors = [
+    { name = "shadowPunch", email = "nithish232005@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "polars>=1.9",
+    "numpy>=2.1",
+    "scipy>=1.14",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "ruff>=0.7",
+]
+
+[build-system]
+requires = ["uv_build>=0.11.23,<0.12.0"]
+build-backend = "uv_build"
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+# DTZ: simulator timestamps are intentionally naive local wall-clock time for
+# one city (there's no cross-timezone conversion anywhere in this project),
+# so requiring tzinfo on every datetime is noise, not a real bug class here.
+ignore = ["DTZ"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
