@@ -100,6 +100,12 @@ src/dispatch_eval/
                               one-shot assignment (see its module docstring
                               for the pessimistic-pinning approximation it
                               makes, and why that trade-off was necessary)
+  ranking_flip.py              P3 — the ranking-flip experiment: bootstrap
+                              resampling, refitting all input models per
+                              draw, the B x R x |policies| CRN loop, and
+                              reporting (P(ranked first), Kendall's tau to
+                              the nominal ranking, C1's variance
+                              decomposition)
 ```
 
 Design choices worth knowing about:
@@ -212,8 +218,28 @@ Design choices worth knowing about:
     capability a bipartite match doesn't have), bonus dominance under that
     pinning cost, and a capacity check. See the module docstring for the
     full reasoning.
-- **P0.1, P3-P5** — not started. (P2's baseline ladder, B0-B5, is now complete —
-  don't confuse it with P5, the separate optional RL-entry phase.)
+- **P3** (the ranking-flip experiment — the plan's centerpiece) — core loop
+  built and tested: `ranking_flip.py` runs the full bootstrap × replication ×
+  policy CRN procedure from the plan's pseudocode. `bootstrap_resample_trips`
+  is a standard nonparametric bootstrap; `fit_all_models` refits arrival, OD,
+  travel-time, and fare models on each resampled draw in one call (fleet size
+  and the abandonment hazard are deliberately *not* refit per draw — see the
+  module docstring for why). `RankingFlipResult` reports `P(policy ranked
+  first)` and Kendall's tau to the nominal ranking; `variance_decomposition`
+  is C1 (within-theta vs. across-theta variance on a paired policy
+  difference, via the law of total variance over the nested (draw,
+  replication) design). The CRN property was verified directly, not just
+  assumed: two identically-behaved policies produce *exactly* identical
+  metrics at every single (b, r) in the test suite, which would fail loudly
+  if the scenario/rng wiring were broken the way it was before the earlier
+  fix. **Not yet built**: the indifference set at level α and the
+  minimum-detectable-effect curve (the plan's other two P3 outputs) — both
+  are straightforward extensions of what's here, just not written yet. Also
+  not yet run at the plan's real scale (B≈200-500) or against real data —
+  only small-scale synthetic runs so far, and the plan's own "metamodel-
+  assisted" fallback for when B×R×|policies| gets too expensive hasn't been
+  needed (or built) at this scale.
+- **P0.1, P4-P5** — not started.
 
 ### Fixed: the engine's shared RNG wasn't policy-independent
 
@@ -310,7 +336,7 @@ What that produced, once real Bengaluru anchors were used instead of NYC's:
 
 ```bash
 uv sync              # installs polars, numpy, scipy, pytest, ruff, networkx
-uv run pytest -q     # 57 tests: engine correctness, calibration recovery, adapters, B1-B5, tuning, CRN scenario
+uv run pytest -q     # 64 tests: engine correctness, calibration recovery, adapters, B1-B5, tuning, CRN scenario, P3
 uv run ruff check .  # lint
 ```
 
@@ -333,11 +359,17 @@ df = generate_synthetic_trips(
 2. Run P1 calibration against the real Delhi NCR data and validate against
    held-out days (KS distance on wait time, trip/vehicle-hour, hour-of-day
    shape — see the project plan's P1 validation section).
-3. P2's baseline ladder (B0-B5) is complete, and the shared-RNG/CRN bug is
-   fixed (see above) — P3 (the ranking-flip experiment) is no longer
-   blocked on that.
+3. P3's core loop is built (`ranking_flip.py`) but two of the plan's three
+   P3 outputs are still missing: the indifference set at level α, and the
+   minimum-detectable-effect curve.
 4. Give each of B1-B4 its tuning budget (`calibration/tuning.py`) instead of
-   the arbitrary defaults used so far, and run B5 against the same realized
-   trace to get real "fraction of clairvoyant gap closed" numbers — neither
-   has been done yet; everything so far has only been tested for
-   correctness, not run as an actual comparative study.
+   the arbitrary defaults used so far, and wire B5's clairvoyant bound into
+   the ranking-flip loop to report "fraction of clairvoyant gap closed" per
+   policy per draw — neither done yet.
+5. Run P3 at something closer to the plan's real scale (B≈200-500) — only
+   small (B≤5) synthetic smoke runs so far. Watch whether B×R×|policies|
+   actually needs the plan's metamodel-assisted fallback at that scale
+   before building it preemptively.
+6. Still open from before: real Delhi NCR / Bengaluru data (a Kaggle token
+   and a Namma Yatri scrape, `DEFAULT_COLUMN_MAP` unverified against actual
+   headers), and P1 validation against held-out real days.
