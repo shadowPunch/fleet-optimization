@@ -1,8 +1,9 @@
 # C6 — Coarsening ladder: real result
 
-**Status: built and run. Result for the pair tested: the ranking survives
-every rung — but that's the expected outcome for this specific pair, and
-the natural sharper follow-up (below) hasn't been run yet.**
+**Status: built and run twice — once on a large-effect pair (ranking
+survives trivially, as expected), and once on a genuinely close pair
+found via `docs/indifference_search.md` (the sharper test this doc
+originally flagged as missing). Both are real, informative results.**
 
 ## What was built
 
@@ -50,17 +51,44 @@ already establishes — coarsening the input data can't flip a ranking that
 bootstrap resampling *of the original fine-grained data* wasn't close to
 flipping in the first place (`P(ranked first) = 1.0` at rung 0 already).
 
-## The sharper follow-up this points to, not yet run
+## The sharper follow-up, now run
 
-The genuinely informative version of this experiment pairs policies that
-C2's own indifference-set output (`ranking_flip.indifference_set`) already
-found to be *close* — e.g. two policies that already land in the same
-indifference set under full-resolution bootstrap resampling are exactly
-the ones a real analyst would worry could flip under coarser real-world
-data too. That run needs an actual P3 result at meaningful scale to know
-which pair is close enough to be interesting (the project's own README
-notes P3 hasn't been run at its planned real scale yet) — worth doing once
-that exists, using this same `coarsening_ladder.py` machinery unchanged.
+`docs/indifference_search.md` found a real indifference set:
+`ValueCorrectedHungarianPolicy` at `value_weight` in
+`{0.5, 0.75, 1.0, 1.5}` are all statistically indistinguishable from each
+other. `analysis/coarsening_ladder_close_pair_run.py` re-runs this exact
+same coarsening ladder on the two most distant members of that set
+(`weight_0.5` vs. `weight_1.5`, B=20, R=4). Real result:
+
+| Rung | Nominal ranking (lower wait first) | τ to rung 0 | P(weight_1.5 ranked first) |
+|---|---|---|---|
+| 0 fine-grained | weight_0.5, weight_1.5 | 1.0 | 0.65 |
+| 1 15-min rounding | weight_0.5, weight_1.5 | 1.0 | 0.70 |
+| 2 ward-level OD | weight_0.5, weight_1.5 | 1.0 | 0.70 |
+| 3 ward-only aggregate | weight_0.5, weight_1.5 | 1.0 | 0.60 |
+
+Two things worth noting, not glossed over:
+
+- **The single nominal (un-resampled) fit disagrees with the bootstrap
+  majority.** The nominal ranking lists `weight_0.5` first (lower point-
+  estimate wait) at every rung, but `weight_1.5` actually wins the
+  *majority* of bootstrap draws (60-70%) at every rung too. A report that
+  only quoted the nominal point estimate would have picked the wrong
+  "typical" answer — exactly the failure mode this project's whole
+  methodology (report `P(ranked first)`, not a point-estimate winner)
+  exists to catch, caught here for real, not hypothetically.
+- **Coarsening doesn't obviously worsen the uncertainty for this pair.**
+  P(ranked first) stays in the same ~30-40%-losing-side band across all
+  four rungs (never collapsing toward 0 or 1 the way the B0-vs-B1 run
+  did, but also never drifting further from ~50/50 as the data gets
+  coarser). For this specific pair and this specific coarsening path, the
+  uncertainty was already fully present at full resolution — going to
+  Bengaluru's real, coarser publication resolution doesn't compound it
+  much further, at least by this measure. That's a real, checkable
+  result now, not a hand-wave either way.
+
+(`τ to rung 0` is trivially ±1 with only two policies being compared —
+not informative here; `P(ranked first)` is the signal to read.)
 
 ## Scope note: B2-B4 weren't included in this run
 

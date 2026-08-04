@@ -364,25 +364,30 @@ Design choices worth knowing about:
   mechanism (e.g. restricting each request to its k nearest vehicles
   before the matrix is built) doesn't exist yet; that's the prerequisite
   for the rest of C4.
-- **C6 (coarsening ladder) built and run**: `src/dispatch_eval/coarsening_ladder.py`
+- **C6 (coarsening ladder) built and run twice**: `src/dispatch_eval/coarsening_ladder.py`
   (tested, `tests/test_coarsening_ladder.py`) + `analysis/coarsening_ladder_sweep.py`
-  — see `docs/coarsening_ladder.md`. Re-runs C2's exact bootstrap-CRN loop
+  + `analysis/coarsening_ladder_close_pair_run.py` — see
+  `docs/coarsening_ladder.md`. Re-runs C2's exact bootstrap-CRN loop
   unchanged (`ranking_flip.py` now takes `bin_minutes`/`od_time_bin_minutes`
   for exactly this reuse) on four progressively coarsened versions of the
   same synthetic data — coarser time/OD binning, then fare/distance
   collapsed to route-level means, then destinations shuffled to destroy
   true OD structure, working toward what Bengaluru's real published data
-  actually offers. Real result (B0 vs. B1, 14 days synthetic, B=20, R=4):
-  the ranking survives all four rungs with zero erosion in P(ranked
-  first) — the expected outcome for this particular pair, since their gap
-  already sits well outside C2's own indifference zone at full
-  resolution, so it's not yet a strong test of the ladder. The sharper
-  version — pairing two policies from within an actual P3 indifference
-  set — needs P3 run at real scale first (still open, see below) and
-  isn't done here. B2-B4 excluded from this run: their value function is
-  fit once at nominal resolution and reused unchanged across rungs, which
-  would muddy a coarsening result specifically for them until it's refit
-  per rung too.
+  actually offers. First run (B0 vs. B1, 14 days synthetic, B=20, R=4):
+  ranking survives all four rungs, zero erosion in P(ranked first) —
+  expected, since that pair's gap already sits well outside C2's own
+  indifference zone at full resolution, not a strong test. **The sharper
+  version is now run too**, on a genuinely close pair found via a
+  dedicated search (`docs/indifference_search.md` — see below): B2's
+  `value_weight` at 0.5 vs. 1.5, two members of a real indifference set.
+  That run found something real and worth knowing: **the single nominal
+  (un-resampled) fit's point estimate disagrees with the bootstrap-
+  majority winner at every rung** (P(weight_1.5 ranked first) = 0.60-0.70
+  throughout, while the nominal fit alone favors weight_0.5) — a concrete
+  instance of exactly the failure mode this project's "report the
+  distribution, not a point estimate" methodology exists to catch, not a
+  hypothetical one. Coarsening itself didn't obviously make the
+  uncertainty worse across the four rungs tested, for this pair.
 - **P4 (C3, C4, C5, C6) built or partially built; P5 not started.**
 
 ### Fixed: the engine's shared RNG wasn't policy-independent
@@ -532,11 +537,13 @@ df = generate_synthetic_trips(
    `dispatch_interval_seconds`, but a CRN-paired comparison needs one
    shared `StudyConfig` — Δ is an engine parameter, not a policy one — so
    these runs use the project-wide default (5.0s) rather than favor one
-   policy's tuned preference. Not yet tried: a *within*-mechanism sweep
-   (e.g. B2 at several `value_weight` values against each other), the
-   natural next place a genuinely close pair might actually turn up.
-   Still open: wire B5's clairvoyant bound into the ranking-flip loop to
-   report "fraction of clairvoyant gap closed" per policy per draw.
+   policy's tuned preference. **The natural follow-up — a within-mechanism
+   sweep — found it**: B2 at `value_weight` in `{0.5, 0.75, 1.0, 1.5}` are
+   all mutually indistinguishable (`value_weight_sweep_run.py`), giving
+   C6 the close pair it needed — see the C6 entry above for what that
+   sharper coarsening run found. Still open: wire B5's clairvoyant bound
+   into the ranking-flip loop to report "fraction of clairvoyant gap
+   closed" per policy per draw.
 5. Run P3 at something closer to the plan's real scale (B≈200-500) — only
    small (B≤5 for the full experiment) synthetic smoke runs so far. Watch
    whether B×R×|policies| actually needs the plan's metamodel-assisted

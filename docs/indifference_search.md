@@ -1,8 +1,7 @@
 # Does this project's baseline ladder ever produce a real indifference set?
 
-**Status: searched across four separate rigorous bootstrap-CRN
-experiments. Answer, so far: no — not once, not even for the closest
-methodological pair in the ladder.**
+**Status: found. Not between different dispatch mechanisms (checked four
+ways, always no) — between close settings of the *same* mechanism.**
 
 ## Why this question, and why it matters
 
@@ -35,51 +34,53 @@ defaults):
    Monte Carlo lookahead). Still no indifference: B4 wins all 50 draws,
    indifference set `{B4}` only.
 
-Run (4) is the most informative one — its own variance decomposition
-(`within_theta_variance=102.2`, `across_theta_variance=27.6`,
+Run (4) is the most informative of the four — its own variance
+decomposition (`within_theta_variance=102.2`, `across_theta_variance=27.6`,
 `input_uncertainty_ratio=0.27`) shows *intrinsic simulation noise actually
 exceeds input-model uncertainty* for this comparison, and the ranking
 **still** never flips across a single bootstrap draw. The B3-vs-B4 gap is
 large enough to swamp both noise sources at once, not narrowly surviving
 one of them.
 
+5. **A within-mechanism sweep: B2 at five `value_weight` settings against
+   *each other*** (`value_weight_sweep_run.py`, B=30,
+   `value_weight ∈ {0.0, 0.5, 0.75, 1.0, 1.5}`, `matching_radius_seconds`
+   held fixed at B2's own tuned value so weight is the only thing that
+   varies). **This one found it.** `weight_0.0` (no value correction at
+   all) is clearly worse and excluded, but `{0.5, 0.75, 1.0, 1.5}` — a 3x
+   range, including the actually-tuned value (0.75-ish) — are **all** in
+   the indifference set at α=0.05, with P(ranked first) split
+   `{0.5: 0.23, 0.75: 0.20, 1.0: 0.30, 1.5: 0.27}`, not concentrated on
+   any one of them.
+
 ## What this means
 
-Not a refutation of the project's methodology — the opposite: C2's
-machinery is doing exactly its job, correctly reporting high confidence
-when the underlying gap really is large. The informative finding is
-*why* it's always large here: this project's baseline ladder (B0-B4)
-compares structurally different **dispatch mechanisms** — greedy
+Runs (1)-(4) are not a refutation of the project's methodology — the
+opposite: C2's machinery is doing exactly its job, correctly reporting
+high confidence when the underlying gap really is large. Those four all
+compared structurally different **dispatch mechanisms** — greedy
 single-assignment vs. globally-optimal batched assignment vs.
 value-function-corrected assignment vs. two different repositioning
-heuristics layered on top. That's a bigger jump than what the ride-hailing
-literature typically reports margins between. P0.1's novelty check found
-a real applied paper reporting "82.3s vs. 85.3s vs. 85.8s" — a few percent
-apart, plausibly *tuning variants of one approach*, not different
-mechanisms. This project's own ladder, once each policy is actually tuned
-to its own best configuration (not just given an arbitrary fixed
-parameter), doesn't produce comparisons that close.
+heuristics layered on top — a bigger jump than the ride-hailing literature
+typically reports margins between (P0.1's novelty check found a real
+applied paper reporting "82.3s vs. 85.3s vs. 85.8s," plausibly *tuning
+variants of one approach*, not different mechanisms).
 
-**This reframes, rather than undermines, where input uncertainty is a
-real risk for this project specifically**: not for "does batched
-assignment beat greedy," which is answered confidently here, but for (a)
-close variants *within* one mechanism (e.g., B2 at different
-`value_weight` settings — not yet tried), (b) the literature's own
-reported comparisons, which this project cannot re-run directly but whose
-margins look closer than anything found here, and (c) what happens under
-real, coarser Bengaluru-resolution data (C6) or a smaller real-world
-effect size than this synthetic ladder produces. The MDE curve
-(`minimum_detectable_effect_curve`, empirically checked in
-`docs/mde_scaling_validation.md`) is the tool for exactly that last
-question, and is arguably now the more central deliverable for this
-specific ladder than the ranking-flip result itself — consistent with the
-plan's own contingency for this outcome.
+Run (5) is the confirmation that the search itself was sound, not just
+unlucky: indifference **does** show up in this project's simulator, right
+where the hypothesis said to look — inside one mechanism's own strength
+dial, once it's doing "enough" correction. `value_weight` above ~0.5
+apparently saturates for this scenario; below that, correcting for future
+value at all matters, but exactly how strongly doesn't, at least not at a
+level this experiment's precision can resolve.
 
-## What wasn't tried
-
-A within-mechanism sweep — e.g. B2 at several `value_weight` values
-against each other, or B1 at several `matching_radius_seconds` values
-against each other — is the natural next place to look for a genuinely
-close pair, since it directly varies *how much* of one mechanism's
-strength is applied rather than comparing different mechanisms outright.
-Not run in this pass.
+**This gave C6 the close pair it was missing, and that follow-up is now
+run too.** `docs/coarsening_ladder.md`'s original run (B0 vs. B1) was
+cleanly separated at every rung — not a strong test. Re-running the exact
+same ladder on `weight_0.5` vs. `weight_1.5` found the sharper result:
+the bootstrap-majority winner disagrees with the single nominal fit's
+point estimate at *every* rung (P(weight_1.5 ranked first) = 0.60-0.70
+throughout, while the nominal fit alone points the other way) — a real,
+not hypothetical, instance of exactly the failure mode this project's
+whole "report the distribution, not a point estimate" methodology exists
+to catch. See `docs/coarsening_ladder.md` for the full table.
