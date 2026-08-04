@@ -93,6 +93,24 @@ def homogenize_arrival_model(model: NHPPArrivalModel) -> NHPPArrivalModel:
     return NHPPArrivalModel(rates=new_rates, bin_minutes=model.bin_minutes)
 
 
+def spatially_uniform_arrival_model(model: NHPPArrivalModel) -> NHPPArrivalModel:
+    """Collapse the NHPP rate to a *single* rate shared by every zone and
+    time bin — strictly more severe than `homogenize_arrival_model`, which
+    still leaves each zone's own average rate intact. This destroys the
+    spatial signal too: a policy using this can't tell a busy zone from a
+    quiet one, only the citywide total. Preserves the citywide average
+    rate exactly (`docs/forecast_degradation.md`: the natural follow-up to
+    check whether B2-B4's advantage over reactive baselines survives
+    losing "which zone is busier," not just "when" — none of this
+    module's other degradations touch that signal).
+    """
+    total = sum(model.rates.values())
+    n = len(model.rates)
+    overall_average = total / n if n else 0.0
+    new_rates = dict.fromkeys(model.rates, overall_average)
+    return NHPPArrivalModel(rates=new_rates, bin_minutes=model.bin_minutes)
+
+
 def marginalize_od_model(model: ODModel) -> ODModel:
     """Collapse destination | (origin, time_bin) to a single marginal
     destination distribution, applied regardless of origin or time —
@@ -150,6 +168,7 @@ def build_degraded_models(
     trips_df: pl.DataFrame,
     n_days: int | None = None,
     homogenize_arrival: bool = False,
+    spatially_uniform_arrival: bool = False,
     marginalize_od: bool = False,
     flatten_travel_time: bool = False,
     day_type_col: str | None = None,
@@ -163,10 +182,14 @@ def build_degraded_models(
     `trips_df` (via `subset_trips_by_days`) instead of the full dataset —
     a policy forecasting from less data than actually exists. `None`
     means fit on the full dataset, isolating structural degradation
-    (the boolean flags) from data-volume degradation. The three flags
+    (the boolean flags) from data-volume degradation. The flags
     independently collapse the corresponding fitted model to a
     structurally simpler (wrong) family — see each degrading function's
-    own docstring for exactly what's destroyed.
+    own docstring for exactly what's destroyed. `spatially_uniform_arrival`
+    is strictly more severe than `homogenize_arrival` (destroys the
+    *spatial* signal — which zone is busier — not just the temporal one);
+    setting both is redundant, `spatially_uniform_arrival` wins if both
+    are set.
     """
     fit_df = trips_df if n_days is None else subset_trips_by_days(trips_df, n_days)
     fitted: FittedModels = fit_all_models(
@@ -175,7 +198,12 @@ def build_degraded_models(
         bin_minutes=bin_minutes,
         od_time_bin_minutes=od_time_bin_minutes,
     )
-    arrival = homogenize_arrival_model(fitted.arrival) if homogenize_arrival else fitted.arrival
+    if spatially_uniform_arrival:
+        arrival = spatially_uniform_arrival_model(fitted.arrival)
+    elif homogenize_arrival:
+        arrival = homogenize_arrival_model(fitted.arrival)
+    else:
+        arrival = fitted.arrival
     od = marginalize_od_model(fitted.od) if marginalize_od else fitted.od
     travel_time = (
         flatten_travel_time_model(fitted.travel_time) if flatten_travel_time else fitted.travel_time
@@ -188,6 +216,7 @@ class DegradationLevel:
     name: str
     n_days: int | None = None
     homogenize_arrival: bool = False
+    spatially_uniform_arrival: bool = False
     marginalize_od: bool = False
     flatten_travel_time: bool = False
 
@@ -267,6 +296,7 @@ def run_degradation_sweep(
             trips_df,
             n_days=level.n_days,
             homogenize_arrival=level.homogenize_arrival,
+            spatially_uniform_arrival=level.spatially_uniform_arrival,
             marginalize_od=level.marginalize_od,
             flatten_travel_time=level.flatten_travel_time,
         )

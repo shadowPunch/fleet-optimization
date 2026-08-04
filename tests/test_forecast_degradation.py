@@ -13,6 +13,7 @@ from dispatch_eval.forecast_degradation import (
     homogenize_arrival_model,
     marginalize_od_model,
     run_degradation_sweep,
+    spatially_uniform_arrival_model,
 )
 from dispatch_eval.models import AbandonmentModel, NHPPArrivalModel, ODModel, TravelTimeModel
 from dispatch_eval.policies.fluid_zone_balancing import FluidZoneBalancingPolicy
@@ -57,6 +58,33 @@ def test_homogenize_arrival_model_keeps_zones_independent():
     out = homogenize_arrival_model(model)
     assert out.rates[("A", "all", 0)] == pytest.approx(2.0)
     assert out.rates[("B", "all", 0)] == pytest.approx(1.0)  # B's own average, not mixed with A
+
+
+# --- spatially_uniform_arrival_model --------------------------------------------
+
+
+def test_spatially_uniform_arrival_model_shares_one_rate_across_zones_and_time():
+    model = NHPPArrivalModel(
+        rates={("A", "all", 0): 4.0, ("A", "all", 1): 0.0, ("B", "all", 0): 1.0, ("B", "all", 1): 1.0},
+        bin_minutes=15,
+    )
+    out = spatially_uniform_arrival_model(model)
+    overall_average = (4.0 + 0.0 + 1.0 + 1.0) / 4  # == 1.5
+    assert all(rate == pytest.approx(overall_average) for rate in out.rates.values())
+    assert out.rates.keys() == model.rates.keys()
+
+
+def test_spatially_uniform_is_more_severe_than_homogenize():
+    # homogenize keeps B's average (1.0) distinct from A's (2.0);
+    # spatially_uniform collapses both to the single citywide average.
+    model = NHPPArrivalModel(
+        rates={("A", "all", 0): 4.0, ("A", "all", 1): 0.0, ("B", "all", 0): 1.0, ("B", "all", 1): 1.0},
+        bin_minutes=15,
+    )
+    homogenized = homogenize_arrival_model(model)
+    uniform = spatially_uniform_arrival_model(model)
+    assert homogenized.rates[("A", "all", 0)] != homogenized.rates[("B", "all", 0)]
+    assert uniform.rates[("A", "all", 0)] == uniform.rates[("B", "all", 0)]
 
 
 # --- marginalize_od_model --------------------------------------------------------

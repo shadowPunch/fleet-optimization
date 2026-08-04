@@ -326,6 +326,30 @@ Design choices worth knowing about:
   module's docstring. A gap-closed report at this patience setting should
   either use a shorter patience window or present the numbers as relative
   to a conservative reference schedule, not a theoretical maximum.
+- **The oracle-forecast confound — checked, and ruled out for the axes
+  tested**: every rigorous comparison in `docs/indifference_search.md`
+  let B2-B4 forecast the world through models fit *the same way, on the
+  same kind of data*, as the model generating the true world — an
+  advantage no real deployment has, and a real candidate explanation for
+  why no indifference ever showed up between mechanisms.
+  `src/dispatch_eval/forecast_degradation.py` (tested) decouples "models
+  the true world runs on" from "models a policy believes," via a new
+  `policy_travel_time_model` split in the engine/runner plus deliberately
+  degraded arrival/OD/travel-time models fed into B2-B4's construction.
+  Real 9-level sweep (`analysis/forecast_degradation_sweep.py`,
+  `docs/forecast_degradation.md`): B2 wins cleanly at *every* level,
+  including one built to remove all spatial knowledge ("which zone is
+  busier") from the forecast, not just temporal detail — the maximally
+  severe single-axis test. The hypothesis predicted collapse somewhere
+  along this axis; it didn't happen anywhere, reported as found rather
+  than reframed. Real open question this raises instead: whether B2's
+  edge is a residual temporal (not spatial) signal survives even a flat
+  forecast, or is actually about its independently-tuned matching radius
+  rather than the value function's forecast content at all — not yet
+  isolated. `variance_decomposition`'s own docstring now carries the
+  matching caveat: `input_uncertainty_ratio` is a floor on input
+  uncertainty, not an estimate of it, since the bootstrap loop it comes
+  from never introduces structural misspecification by construction.
 - **P0.1** (novelty check) — done, provisional GO: `docs/p0_novelty_check.md`.
   A web-search pass (not a full Scholar/WSC-archive traversal — see the
   memo's own caveat) across the plan's five required strings plus the
