@@ -121,6 +121,12 @@ src/dispatch_eval/
                               only — see docs/compute_parity.md for why
                               the "degrade + re-measure quality" half
                               needs a mechanism this codebase doesn't have)
+  coarsening_ladder.py           C6 — re-runs C2's exact bootstrap-CRN
+                              experiment on progressively coarsened trip
+                              data (coarser time/OD binning, fare/distance
+                              collapsed to route means, destinations
+                              shuffled to destroy OD structure), reports
+                              the ranking shift at each rung
   geo/
     crosswalk.py               C5 prep, dev-time only (geopandas/shapely/
                               pyproj are dev dependencies, not simulator
@@ -347,7 +353,26 @@ Design choices worth knowing about:
   mechanism (e.g. restricting each request to its k nearest vehicles
   before the matrix is built) doesn't exist yet; that's the prerequisite
   for the rest of C4.
-- **P4 (C3, C4, C5) built or partially built; P5 not started.**
+- **C6 (coarsening ladder) built and run**: `src/dispatch_eval/coarsening_ladder.py`
+  (tested, `tests/test_coarsening_ladder.py`) + `analysis/coarsening_ladder_sweep.py`
+  — see `docs/coarsening_ladder.md`. Re-runs C2's exact bootstrap-CRN loop
+  unchanged (`ranking_flip.py` now takes `bin_minutes`/`od_time_bin_minutes`
+  for exactly this reuse) on four progressively coarsened versions of the
+  same synthetic data — coarser time/OD binning, then fare/distance
+  collapsed to route-level means, then destinations shuffled to destroy
+  true OD structure, working toward what Bengaluru's real published data
+  actually offers. Real result (B0 vs. B1, 14 days synthetic, B=20, R=4):
+  the ranking survives all four rungs with zero erosion in P(ranked
+  first) — the expected outcome for this particular pair, since their gap
+  already sits well outside C2's own indifference zone at full
+  resolution, so it's not yet a strong test of the ladder. The sharper
+  version — pairing two policies from within an actual P3 indifference
+  set — needs P3 run at real scale first (still open, see below) and
+  isn't done here. B2-B4 excluded from this run: their value function is
+  fit once at nominal resolution and reused unchanged across rungs, which
+  would muddy a coarsening result specifically for them until it's refit
+  per rung too.
+- **P4 (C3, C4, C5, C6) built or partially built; P5 not started.**
 
 ### Fixed: the engine's shared RNG wasn't policy-independent
 
@@ -444,7 +469,7 @@ What that produced, once real Bengaluru anchors were used instead of NYC's:
 
 ```bash
 uv sync              # installs polars, numpy, scipy, pytest, ruff, networkx
-uv run pytest -q     # 95 tests: engine correctness, calibration recovery, adapters, B1-B5, tuning, CRN scenario, P3, ward crosswalk, decision currency, compute parity
+uv run pytest -q     # 102 tests: engine correctness, calibration recovery, adapters, B1-B5, tuning, CRN scenario, P3, ward crosswalk, decision currency, compute parity, coarsening ladder
 uv run ruff check .  # lint
 ```
 
@@ -488,8 +513,11 @@ df = generate_synthetic_trips(
    measurement half is built** (`compute_parity.py`, `docs/compute_parity.md`);
    its "degrade + re-measure quality" half needs an actual
    candidate-graph-truncation mechanism that doesn't exist yet (see that
-   doc for why `matching_radius_seconds` doesn't qualify). Also unstarted
-   and data-free: C6 (the coarsening ladder on our own synthetic data).
+   doc for why `matching_radius_seconds` doesn't qualify). **C6 is built
+   and run** (`coarsening_ladder.py`, `docs/coarsening_ladder.md`) — the
+   sharper version (a pair from an actual P3 indifference set, not the
+   large-effect B0-vs-B1 pair tested so far) needs P3 at real scale first
+   (next item).
 8. **C5's crosswalk is built** (`src/dispatch_eval/geo/crosswalk.py`,
    `analysis/ward_crosswalk.py` — see `docs/census_bbmp_data.md` for the
    validated error numbers). What's left: confirm which ward era Namma

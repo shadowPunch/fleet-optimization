@@ -140,6 +140,8 @@ def run_ranking_flip_experiment(
     n_replications: int,
     seed: int,
     metric_fn: Callable[[SimulationResult], float] = _mean_wait_seconds,
+    bin_minutes: int = 15,
+    od_time_bin_minutes: int = 60,
 ) -> RankingFlipResult:
     """Run the full B x R x |policies| bootstrap-CRN experiment.
 
@@ -151,6 +153,15 @@ def run_ranking_flip_experiment(
     scenario generation only depends on that seed and the fitted models
     (never on the policy), the request trace — and therefore the comparison
     — is genuinely paired.
+
+    `bin_minutes`/`od_time_bin_minutes` are passed straight through to every
+    `fit_all_models` call (nominal and every bootstrap draw) — the defaults
+    match `fit_all_models`'s own, so this is a no-op unless a caller
+    overrides them. `coarsening_ladder.py` (C6) is the reason this is a
+    parameter here rather than hardcoded: re-running this exact experiment
+    at coarser time resolution is exactly its "how much of the ranking
+    survives" question, and duplicating this whole loop elsewhere to vary
+    two numbers would violate DRY for no benefit.
     """
     policy_names = list(policies.keys())
 
@@ -159,7 +170,9 @@ def run_ranking_flip_experiment(
     _NOMINAL_SENTINEL = 0x4E4F4D31  # "NOM1"
     _RESAMPLE_SENTINEL = 0x52455331  # "RES1"
 
-    nominal_models = fit_all_models(trips_df)
+    nominal_models = fit_all_models(
+        trips_df, bin_minutes=bin_minutes, od_time_bin_minutes=od_time_bin_minutes
+    )
     nominal_metric: dict[str, float] = {}
     for name, policy in policies.items():
         rng = np.random.default_rng(np.random.SeedSequence([seed, _NOMINAL_SENTINEL]))
@@ -181,7 +194,9 @@ def run_ranking_flip_experiment(
 
     for b in range(n_bootstrap):
         resampled = bootstrap_resample_trips(trips_df, resample_rng)
-        models_b = fit_all_models(resampled)
+        models_b = fit_all_models(
+            resampled, bin_minutes=bin_minutes, od_time_bin_minutes=od_time_bin_minutes
+        )
         for r in range(n_replications):
             for name, policy in policies.items():
                 rng = np.random.default_rng(np.random.SeedSequence([seed, b, r]))
