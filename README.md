@@ -152,15 +152,44 @@ src/dispatch_eval/
   geo/
     crosswalk.py               C5 prep, dev-time only (geopandas/shapely/
                               pyproj are dev dependencies, not simulator
-                              runtime deps): generic area-weighted
-                              interpolation between administrative boundary
-                              eras, plus a validator that checks an
-                              interpolated column against an authoritative
-                              reference. Applied to Bengaluru's specific
-                              2011-to-369-ward reallocation in
-                              analysis/ward_crosswalk.py (see
-                              docs/census_bbmp_data.md).
+                              runtime deps): `areal_interpolate` (sums
+                              extensive/count variables — population,
+                              SC/ST) and `areal_interpolate_weighted_average`
+                              (area-weighted averages intensive/rate
+                              variables — household amenity percentages,
+                              where summing would be meaningless), plus a
+                              validator that checks an interpolated column
+                              against an authoritative reference. Applied
+                              to Bengaluru's specific 2011-to-369-ward
+                              reallocation in analysis/ward_crosswalk.py
+                              and analysis/ward_amenities_crosswalk.py
+                              (see docs/census_bbmp_data.md).
+  forecast_degradation.py       decouples "models the true simulated world
+                              runs on" from "models a policy believes" —
+                              homogenize_arrival_model / spatially_uniform_
+                              arrival_model / marginalize_od_model /
+                              flatten_travel_time_model each collapse a
+                              fitted model to a deliberately wrong
+                              structural family (or fit on fewer days via
+                              build_degraded_models), and
+                              run_degradation_sweep re-runs C2's bootstrap
+                              experiment once per degradation level while
+                              the true world stays correctly specified.
+                              Built to check whether B2-B4's advantage is
+                              an oracle-forecast artifact (see
+                              docs/forecast_degradation.md for the real,
+                              negative result) and to give C1 a way to
+                              probe structural ambiguity, which
+                              variance_decomposition's own bootstrap loop
+                              can't touch by construction.
 ```
+
+At the project root: `run_study.py` — the single entrypoint (per the
+plan's reproducibility-discipline requirement) that runs P1 calibration,
+P2 tuning, and the P3 bootstrap-CRN experiment (B5 wired in) end to end
+from one command, writing every `(policy, bootstrap_draw, replication) →
+metrics` cell to one parquet file rather than a summary. See "Running it"
+below.
 
 Design choices worth knowing about:
 
@@ -190,6 +219,32 @@ Design choices worth knowing about:
   never change which column a row prefers (a standard property of the
   assignment problem). Same reasoning is why B1's radius cutoff is a hard
   exclusion rather than a soft penalty term.
+
+## Test coverage
+
+132 tests across 17 files, all in `tests/`, all passing as of the latest
+commit (`uv run pytest -q`). Every test is synthetic-data-only — nothing
+here depends on real Delhi NCR/Bengaluru/NYC files being present.
+
+| File | Count | Covers |
+|---|---|---|
+| `test_engine.py` | 7 | Event-loop correctness (internally consistent completed trips, undersupply → abandonment, repositioning state transitions, deterministic replay given a fixed seed), plus the `policy_travel_time_model` split: defaults to the true model, a distinct override actually reaches the policy, and realized trip durations track the *true* model even when the policy's belief is wildly wrong. |
+| `test_scenario.py` | 3 | The CRN fix — scenario generation is deterministic, order-independent, and a full-trace regression check. |
+| `test_calibration.py` | 8 | Every fitted model (arrival, OD, travel time, fare, fleet size) recovers known ground truth from synthetic data within tolerance. |
+| `test_tuning.py` | 4 | `random_search` recovers a known optimum, is reproducible given a seed, respects `minimize`, and improves on a deliberately bad fixed B1 configuration. |
+| `test_batched_hungarian.py` | 4 | B1 finds the globally optimal assignment (a case where greedy would provably do worse), radius-cutoff behavior. |
+| `test_value_function.py` | 3 | B2's value function: terminal boundary is zero, a busier zone gets a strictly lower cost-to-go, monotonic decay as the horizon closes. |
+| `test_value_corrected_hungarian.py` | 4 | B2's cost correction actually flips a tied pickup-cost choice toward the better-value destination; `value_weight=0` recovers B1 exactly. |
+| `test_fluid_zone_balancing.py` | 7 | B3's apportionment rounding, moving vehicles out of a zero-demand zone, no-op when balanced, delegation to the wrapped policy, an end-to-end engine run. |
+| `test_sampling_lookahead.py` | 6 | B4's sampled-lookahead repositioning, no-idle/nothing-sampled edge cases, never repositioning a vehicle to its own zone. |
+| `test_clairvoyant.py` | 9 | B5: trivial same-zone service, infeasible requests correctly unserved, multi-request chaining (the thing a bipartite match can't do), the relaxation over-serving a true simultaneous-capacity tie (documented as intended, not a bug), a direct regression check that a long patience window on one request no longer starves a later one, and the discretization-exclusion diagnostic (coarse vs. fine `bin_minutes` on the same request). |
+| `test_ranking_flip.py` | 19 | The full B×R×policy CRN loop; identical policies get exactly identical per-(b,r) metrics (the CRN property, checked directly not assumed); `variance_decomposition` recovers known within/across variance structure; `indifference_set` correctly separates and correctly merges policies; the MDE curve's monotonicity and its unscaled-standard-error edge case; `validate_mde_scaling`'s anchor-point arithmetic; `compute_clairvoyant`'s output shape, plausibility, and discretization-exclusion reporting; `fraction_of_gap_closed`'s arithmetic on a hand-built fake result. |
+| `test_forecast_degradation.py` | 13 | Each degrading function's exact arithmetic (average-preserving, zone-independence, spatial-vs-temporal severity ordering, OD-marginal normalization, sigma zeroing); `build_degraded_models`'s flag composition; `build_policy_ladder` actually wires degraded models into B2-B4, not the true ones; an end-to-end two-level sweep. |
+| `test_decision_currency.py` | 10 | `FleetWaitCurve.invert`'s interpolation and extrapolation (both directions, flagged); `build_fleet_wait_curve`'s monotonicity; the `decision_currency` sign convention and arithmetic on a fake result. |
+| `test_compute_parity.py` | 7 | Latency measurement shapes and problem-size labeling; `feasible_within_budget`'s threshold logic; the empirical proof that `matching_radius_seconds` doesn't shrink the matrix `scipy` actually solves (spied by object, not inferred from timing). |
+| `test_coarsening_ladder.py` | 7 | Each coarsening transform's exact effect (route-mean imputation, null-preservation for incomplete trips, OD-shuffle preserves the marginal but breaks a perfect pairing); an end-to-end two-rung ladder run. |
+| `test_crosswalk.py` | 13 | `areal_interpolate`'s area-weighted split and conservation properties; `areal_interpolate_weighted_average`'s weighted-mean-not-sum behavior on hand-computable synthetic polygons; `interpolation_error`'s arithmetic; CRS/empty-input error handling for both functions. |
+| `test_sources.py` | 8 | Every real-source adapter (`nyc_tlc`, `delhi_ncr`, `bengaluru`) against schema-valid fixtures; required-column enforcement. |
 
 ## Status against the phase plan
 
@@ -577,7 +632,7 @@ What that produced, once real Bengaluru anchors were used instead of NYC's:
 
 ```bash
 uv sync              # installs polars, numpy, scipy, pytest, ruff, networkx
-uv run pytest -q     # 107 tests: engine correctness, calibration recovery, adapters, B1-B5, tuning, CRN scenario, P3, ward crosswalk, decision currency, compute parity, coarsening ladder
+uv run pytest -q     # 132 tests, all synthetic-data-only — see "Test coverage" below for the file-by-file breakdown
 uv run ruff check .  # lint
 ```
 
@@ -612,74 +667,91 @@ df = generate_synthetic_trips(
 )
 ```
 
+## Documentation index
+
+Every `docs/*.md` file, what it's for, and its status:
+
+| File | Status | What it's for |
+|---|---|---|
+| `docs/observability_table.md` | done (P0.2) | Quantity-by-quantity: is it observable in public data, and how does it enter the simulator. |
+| `docs/p0_novelty_check.md` | done, provisional GO | Literature novelty check against the plan's five required search strings. |
+| `docs/pre_registration.md` | done, amended 2026-08-04 | P1 validation thresholds, indifference-set α, primary metric, bootstrap-budget minimum, B5 reporting commitment — all committed before the confirmatory run. |
+| `docs/census_bbmp_data.md` | crosswalk built, run | C5: what Census/BBMP data exists, the ward-boundary crosswalk (population/SC/ST + household amenities), measured error rates, and the data.gov.in access obstacle for literacy/worker data. |
+| `docs/compute_parity.md` | measurement half built | C4: real dispatch-latency numbers across problem sizes; why `matching_radius_seconds` doesn't give a latency-degradation lever. |
+| `docs/coarsening_ladder.md` | built, run twice | C6: the coarsening-ladder result for both a large-effect pair (survives trivially) and a genuinely close pair (a real, reported point-estimate-vs-bootstrap-majority disagreement). |
+| `docs/mde_scaling_validation.md` | checked | Empirical check of the MDE curve's 1/n_days assumption — it doesn't hold exactly; the curve is conservative, not misleading. |
+| `docs/indifference_search.md` | found | Whether this project's own baseline ladder ever produces a real indifference set — not between mechanisms, but between close settings of one (B2's `value_weight`); cross-references the forecast-degradation result. |
+| `docs/forecast_degradation.md` | built, run (9 levels) | Whether B2-B4's advantage is an oracle-forecast artifact — checked and ruled out on every axis tried, including removing all spatial demand knowledge; what's still open instead. |
+
+## Analysis scripts
+
+Every `analysis/*.py` script is independently runnable
+(`uv run python analysis/<name>.py`) and caches its own output under
+`analysis/cache/` (gitignored). None require real data.
+
+| Script | What it does |
+|---|---|
+| `nyc_reference_comparison.py` | Fetches/caches one day of real NYC TLC data; compares the synthetic generator's shape against it. |
+| `ward_crosswalk.py` | C5: population/SC/ST crosswalk, 2011→369-ward, with validation against the GBA's official reallocation. |
+| `ward_amenities_crosswalk.py` | C5: household-amenity-rate crosswalk using the weighted-average method. |
+| `compute_parity_sweep.py` | C4: real B0-B4 latency numbers across problem sizes 10×10 to 600×600. |
+| `coarsening_ladder_sweep.py` | C6: the first coarsening-ladder run (B0 vs. B1, large effect). |
+| `coarsening_ladder_close_pair_run.py` | C6: the sharper coarsening-ladder run on a genuine indifference-set pair. |
+| `policy_tuning_run.py` | P2: identical-budget random-search tuning for B1-B4; writes `cache/policy_tuning_results.json`, consumed by most scripts below. |
+| `tuned_ranking_flip_run.py` | The tuned B0-B4 ladder run through a real bootstrap-CRN comparison. |
+| `fleet_size_sensitivity_run.py` | Same comparison swept across fleet_size ∈ {15, 30, 60}, looking for indifference. |
+| `b3_vs_b4_run.py` | The closest methodological pair in the ladder, head to head, larger bootstrap budget. |
+| `value_weight_sweep_run.py` | B2 at several `value_weight` settings against each other — where the real indifference set was found. |
+| `clairvoyant_gap_closed_run.py` | B5 wired into the tuned ladder; the real gap-closed numbers, post-fix. |
+| `forecast_degradation_sweep.py` | The 9-level forecast-degradation sweep. |
+
 ## Next steps
 
-1. Get the real files: a Kaggle API token for `shayanzk/ola-ride-bookings-dataset`,
-   and either a scrape of nammayatri.in/open or the Kaggle mirror of it —
-   then confirm each `DEFAULT_COLUMN_MAP` against the actual headers.
-2. Run P1 calibration against the real Delhi NCR data and validate against
-   held-out days (KS distance on wait time, trip/vehicle-hour, hour-of-day
-   shape — see the project plan's P1 validation section).
-3. P3's core loop and all four plan outputs are built (`ranking_flip.py`).
-   The MDE curve's 1/n variance-scaling assumption **is now empirically
-   checked** (`validate_mde_scaling`, `docs/mde_scaling_validation.md`) —
-   and doesn't hold exactly (see above). Worth understanding *why* before
-   this goes further: is it the NHPP arrival fit's sparse-cell fallback
-   behavior, the four-jointly-refit-sub-models structure, or something
-   else — not established by the check itself.
-4. **B1-B4 now each have a real tuning budget** instead of the arbitrary
-   fixed parameters used everywhere else so far —
-   `analysis/policy_tuning_run.py`, identical `n_evaluations=25` random
-   search per policy (the P2 parity condition). Feeding those tuned
-   configs into real bootstrap-CRN comparisons
-   (`tuned_ranking_flip_run.py`, `fleet_size_sensitivity_run.py`,
-   `b3_vs_b4_run.py`) turned into a small research thread of its own —
-   **does this project's baseline ladder ever produce a genuine
-   indifference set?** Full write-up: `docs/indifference_search.md`.
-   Short version: no, not across four separate experiments (the full
-   ladder at three fleet sizes, and B3-vs-B4 head-to-head — the closest
-   methodological pair possible). Not a null result: it means this
-   ladder's *mechanisms* (greedy vs. globally-optimal vs.
-   value-function-corrected assignment) differ enough to sit outside
-   indifference regardless of fleet size, unlike the close few-percent
-   margins the literature typically reports between *variants of one*
-   algorithm (see P0.1's own finding: "82.3s vs. 85.3s vs. 85.8s"). One
-   real methodological wrinkle surfaced along the way, worth knowing
-   about if this gets reused: each policy was tuned with its own
-   `dispatch_interval_seconds`, but a CRN-paired comparison needs one
-   shared `StudyConfig` — Δ is an engine parameter, not a policy one — so
-   these runs use the project-wide default (5.0s) rather than favor one
-   policy's tuned preference. **The natural follow-up — a within-mechanism
-   sweep — found it**: B2 at `value_weight` in `{0.5, 0.75, 1.0, 1.5}` are
-   all mutually indistinguishable (`value_weight_sweep_run.py`), giving
-   C6 the close pair it needed — see the C6 entry above for what that
-   sharper coarsening run found. **B5's clairvoyant bound is wired in
-   too** (`compute_clairvoyant=True`, `fraction_of_gap_closed`) — see the
-   P3 status entry above for the real result (every policy beat the
-   "bound" at this patience setting, a genuine confirmation of B5's own
-   documented approximation, not a new problem).
-5. Run P3 at something closer to the plan's real scale (B≈200-500) — only
-   small (B≤5 for the full experiment) synthetic smoke runs so far. Watch
-   whether B×R×|policies| actually needs the plan's metamodel-assisted
-   fallback at that scale before building it preemptively.
-6. Still open from before: real Delhi NCR / Bengaluru data (a Kaggle token
-   and a Namma Yatri scrape, `DEFAULT_COLUMN_MAP` unverified against actual
-   headers), and P1 validation against held-out real days.
-7. **C3 is built** (`decision_currency.py` — see above); not yet run
-   end-to-end against a real P3 study, only unit-tested. **C4's
-   measurement half is built** (`compute_parity.py`, `docs/compute_parity.md`);
-   its "degrade + re-measure quality" half needs an actual
-   candidate-graph-truncation mechanism that doesn't exist yet (see that
-   doc for why `matching_radius_seconds` doesn't qualify). **C6 is built
-   and run** (`coarsening_ladder.py`, `docs/coarsening_ladder.md`) — the
-   sharper version (a pair from an actual P3 indifference set, not the
-   large-effect B0-vs-B1 pair tested so far) needs P3 at real scale first
-   (next item).
-8. **C5's crosswalk is built** (`src/dispatch_eval/geo/crosswalk.py`,
-   `analysis/ward_crosswalk.py` — see `docs/census_bbmp_data.md` for the
-   validated error numbers). What's left: confirm which ward era Namma
-   Yatri's actual data reports against (assumed 369-ward GBA — check
-   before trusting a join), download the literacy/worker-category/amenity
-   Census variables the GBA file doesn't carry (data.gov.in's Karnataka
-   PCA file) and run them through the same crosswalk, then actually wire
-   the result into a C5 join against real ward-level dispatch results.
+Everything below is genuinely open as of the latest commit — not
+organically stale leftovers. Grouped by what's blocking each one.
+
+**Blocked on real data access:**
+
+1. NYC TLC data (the new primary methodological study — see "Data
+   status"): `analysis/nyc_reference_comparison.py` already fetches and
+   caches one day for shape validation; the full P1 run against it
+   (calibrate, then check the pre-registered KS-distance/cosine-shape
+   thresholds on *held-out* days) is not done.
+2. Bengaluru (Namma Yatri) applicability study: needs an actual scrape or
+   the Kaggle mirror — not available in this environment. Once obtained,
+   confirm which ward scheme it reports against before trusting any join
+   to the C5 crosswalk (assumed 369-ward GBA, unverified).
+3. C5's literacy/worker-participation Census variables: data.gov.in's
+   Karnataka PCA file specifically resisted scripted access (client-side
+   SPA — see `docs/census_bbmp_data.md`); population/SC/ST and household
+   amenities are already crosswalked without it.
+
+**Not blocked, not yet done:**
+
+4. C4's "degrade + re-measure quality" half needs an actual
+   candidate-graph-truncation mechanism (e.g. restrict each request to
+   its *k* nearest vehicles before building the cost matrix) — confirmed
+   `matching_radius_seconds` doesn't provide this (`docs/compute_parity.md`).
+   Estimated small (~20 lines); unblocks the rest of C4.
+5. Fold structural ambiguity into `variance_decomposition`'s own
+   arithmetic as a genuine third term, rather than checking it via the
+   separate `forecast_degradation.py` sweep it's currently limited to
+   (`docs/forecast_degradation.md`).
+6. The MDE curve's 1/n_days assumption doesn't hold exactly
+   (`docs/mde_scaling_validation.md`) — the cause isn't isolated. An
+   ablation refitting one sub-model per bootstrap draw while holding the
+   other three at nominal, swept across `n_days`, would isolate which one
+   breaks the assumption (arrival fit's sparse-cell fallback is the
+   leading guess, not confirmed).
+7. `docs/forecast_degradation.md`'s own open question: whether B2's
+   surviving advantage (even under the most severe forecast degradation
+   tested) is a residual temporal signal from the value function's
+   finite-horizon boundary, or actually comes from its independently
+   tuned matching radius rather than forecast content at all. Needs a
+   further, more surgical experiment (e.g. B1 with B2's exact tuned
+   radius but `value_weight=0`) — not run.
+8. C3 (`decision_currency.py`) is tested but has never been run
+   end-to-end against a real bootstrap study, only fake/small inputs.
+9. P5 (RL entry) — not started; explicitly gated behind P3 in the plan
+   and requires its own scoping (environment design, seed-variance and
+   budget-parity accounting) before starting.
