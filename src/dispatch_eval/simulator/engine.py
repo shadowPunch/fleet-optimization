@@ -60,10 +60,19 @@ class SimulationEngine:
         horizon_seconds: float,
         rng: np.random.Generator,
         dispatch_interval_seconds: float = 5.0,
+        policy_travel_time_model: TravelTimeModel | None = None,
     ) -> None:
         self.vehicles = {v.vehicle_id: v for v in vehicles}
         self.scenario = scenario
         self.travel_time_model = travel_time_model
+        # What the *policy* believes about travel time, handed to
+        # dispatch()/reposition() calls -- defaults to the same (true)
+        # model, so existing callers are unaffected. Distinct from
+        # `travel_time_model`, which is what actually generates realized
+        # pickup/trip durations below: see forecast_degradation.py's
+        # module docstring for why conflating the two gives model-based
+        # policies an oracle forecast.
+        self.policy_travel_time_model = policy_travel_time_model or travel_time_model
         self.policy = policy
         self.zones = zones
         self.horizon_seconds = horizon_seconds
@@ -149,7 +158,7 @@ class SimulationEngine:
 
         if waiting and idle:
             assignments = self.policy.dispatch(
-                waiting, idle, event.time, hour, self.travel_time_model
+                waiting, idle, event.time, hour, self.policy_travel_time_model
             )
             for vehicle_id, request_id in assignments:
                 self._assign(vehicle_id, request_id, event.time)
@@ -164,7 +173,7 @@ class SimulationEngine:
             still_idle = [v for v in self.vehicles.values() if v.status == VehicleStatus.IDLE]
             if still_idle:
                 for vehicle_id, target_zone in reposition_fn(
-                    still_idle, event.time, hour, self.travel_time_model, self.zones, self.rng
+                    still_idle, event.time, hour, self.policy_travel_time_model, self.zones, self.rng
                 ):
                     self.reposition_vehicle(vehicle_id, target_zone, event.time)
 

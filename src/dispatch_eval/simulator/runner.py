@@ -42,7 +42,18 @@ def run_simulation(
     policy: DispatchPolicy,
     config: StudyConfig,
     rng: np.random.Generator,
+    policy_travel_time_model: TravelTimeModel | None = None,
 ) -> SimulationResult:
+    """`arrival_model`/`od_model`/`travel_time_model` generate the *true*
+    world (the scenario, and realized pickup/trip durations).
+    `policy_travel_time_model`, if given, is what's handed to the policy's
+    own `dispatch()`/`reposition()` calls instead — defaults to
+    `travel_time_model`, so every existing caller is unaffected. See
+    `forecast_degradation.py` for why a caller would want these to differ:
+    a policy whose belief about the world is fit from the same data (or
+    family) that generated it has an oracle forecast no real deployment
+    would have.
+    """
     scenario = generate_scenario(
         config.zones,
         config.day_type,
@@ -66,5 +77,6 @@ def run_simulation(
         horizon_seconds=config.horizon_seconds,
         rng=rng,
         dispatch_interval_seconds=config.dispatch_interval_seconds,
+        policy_travel_time_model=policy_travel_time_model,
     )
     return engine.run()

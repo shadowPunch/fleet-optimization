@@ -114,3 +114,70 @@ def test_event_ordering_is_deterministic_for_a_fixed_seed():
         r.request_id for r in second.completed_requests
     ]
     assert np.allclose(first.wait_times, second.wait_times)
+
+
+class _SpyPolicy:
+    """Records which travel_time_model object dispatch() is actually called
+    with, so tests can assert on object identity rather than behavior."""
+
+    def __init__(self):
+        self.seen_travel_time_models: list[TravelTimeModel] = []
+
+    def dispatch(self, waiting_requests, idle_vehicles, current_time, current_hour, travel_time_model):
+        self.seen_travel_time_models.append(travel_time_model)
+        return []
+
+
+def test_policy_travel_time_model_defaults_to_the_true_model():
+    arrival_model, od_model, true_tt_model, ab_model = _uniform_models()
+    config = StudyConfig(zones=ZONES, day_type="all", horizon_seconds=3600.0)
+    spy = _SpyPolicy()
+
+    run_simulation(
+        fleet_size=5, arrival_model=arrival_model, od_model=od_model,
+        travel_time_model=true_tt_model, abandonment_model=ab_model,
+        policy=spy, config=config, rng=np.random.default_rng(0),
+    )
+
+    assert len(spy.seen_travel_time_models) > 0
+    assert all(m is true_tt_model for m in spy.seen_travel_time_models)
+
+
+def test_policy_travel_time_model_overrides_what_the_policy_receives():
+    arrival_model, od_model, true_tt_model, ab_model = _uniform_models()
+    policy_tt_model = TravelTimeModel(params={}, fallback_params=(float(np.log(999.0)), 0.1))
+    config = StudyConfig(zones=ZONES, day_type="all", horizon_seconds=3600.0)
+    spy = _SpyPolicy()
+
+    run_simulation(
+        fleet_size=5, arrival_model=arrival_model, od_model=od_model,
+        travel_time_model=true_tt_model, abandonment_model=ab_model,
+        policy=spy, config=config, rng=np.random.default_rng(0),
+        policy_travel_time_model=policy_tt_model,
+    )
+
+    assert len(spy.seen_travel_time_models) > 0
+    assert all(m is policy_tt_model for m in spy.seen_travel_time_models)
+    assert all(m is not true_tt_model for m in spy.seen_travel_time_models)
+
+
+def test_realized_trip_durations_use_the_true_model_not_the_policy_belief():
+    # True world: fast travel (~30s). Policy's belief: absurdly slow (~10000s).
+    # Realized dropoff-pickup durations must reflect the true (fast) model,
+    # never the policy's mistaken belief -- the belief only shapes decisions.
+    arrival_model, od_model, _, ab_model = _uniform_models(rate_per_minute=0.5)
+    fast_true_model = TravelTimeModel(params={}, fallback_params=(float(np.log(30.0)), 0.01))
+    slow_policy_belief = TravelTimeModel(params={}, fallback_params=(float(np.log(9999.0)), 0.01))
+    config = StudyConfig(zones=ZONES, day_type="all", horizon_seconds=3600.0)
+
+    result = run_simulation(
+        fleet_size=10, arrival_model=arrival_model, od_model=od_model,
+        travel_time_model=fast_true_model, abandonment_model=ab_model,
+        policy=NearestIdlePolicy(), config=config, rng=np.random.default_rng(1),
+        policy_travel_time_model=slow_policy_belief,
+    )
+
+    assert len(result.completed_requests) > 0
+    for request in result.completed_requests:
+        duration = request.dropoff_time - request.pickup_time
+        assert duration < 200.0  # nowhere near the policy's ~9999s belief

@@ -173,6 +173,7 @@ def run_ranking_flip_experiment(
     od_time_bin_minutes: int = 60,
     compute_clairvoyant: bool = False,
     clairvoyant_bin_minutes: float = 15.0,
+    policy_travel_time_model: TravelTimeModel | None = None,
 ) -> RankingFlipResult:
     """Run the full B x R x |policies| bootstrap-CRN experiment.
 
@@ -206,6 +207,19 @@ def run_ranking_flip_experiment(
     off by default since it adds B x R min-cost-flow solves on top of this
     function's existing B x R x |policies| simulation cost, for a result
     most callers don't need.
+
+    `policy_travel_time_model`, if given, is what every policy's own
+    `dispatch()`/`reposition()` calls see instead of the true, per-draw
+    `models_b.travel_time` — passed straight through to `run_simulation`.
+    Defaults to `None` (each policy sees the true model, current
+    behavior). The clairvoyant solve above always uses the true model
+    regardless of this — it represents an oracle over the *actual* world,
+    not a policy's belief about it. See `forecast_degradation.py` for why
+    a caller would set this: every policy here already implicitly
+    forecasts through whatever `travel_time_model` it receives, and B2-B4
+    additionally bake a value function / arrival-rate reference into their
+    own construction from models fit the *same way* the true scenario is
+    — an oracle-forecast confound this parameter exists to break.
     """
     policy_names = list(policies.keys())
 
@@ -229,6 +243,7 @@ def run_ranking_flip_experiment(
             policy,
             config,
             rng,
+            policy_travel_time_model=policy_travel_time_model,
         )
         nominal_metric[name] = metric_fn(result)
     nominal_ranking = sorted(policy_names, key=lambda name: nominal_metric[name])
@@ -280,6 +295,7 @@ def run_ranking_flip_experiment(
                     policy,
                     config,
                     rng,
+                    policy_travel_time_model=policy_travel_time_model,
                 )
                 metric_by_policy[name][b, r] = metric_fn(result)
 
