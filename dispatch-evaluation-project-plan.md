@@ -193,6 +193,8 @@ Expect the outcome that RL sits inside the indifference set. That is a fine outc
 - **Reproducibility discipline:** seed everything; store `(policy, θ_bootstrap_index, replication_seed) → metrics` in a single parquet results table; never recompute a headline number from a notebook cell. One `run_study.py` that regenerates every figure from raw data.
 - **Pre-registration:** write down validation acceptance thresholds, the α for the indifference set, and the primary metric *before* running P1 validation and P3. Commit the file with a timestamp. This is the process correction that mattered most in the superconductivity work and it matters more here, because the whole paper is a claim about statistical discipline.
 
+  *Done: `docs/pre_registration.md`, committed 2026-08-04 — KS-distance and hour-of-day-shape thresholds for P1, the abandonment-hazard sweep specifications, mean wait time as the primary P3 metric, α=0.05 for the indifference set, a minimum n_bootstrap≥40 (evidence-based, from the MDE-scaling-validation work's own finding that n_bootstrap=15 was unstable), and a B5 gap-closed reporting commitment (from the finding that mean_patience_seconds=300s makes B5 not a real upper bound). Explicitly scoped to the confirmatory study against real data, not the exploratory/methodology-development work already done — see that doc for why pre-registering after that work but before the confirmatory run is the correct order.*
+
 ---
 
 ## 5. Risks and responses

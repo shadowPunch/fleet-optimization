@@ -311,6 +311,18 @@ Design choices worth knowing about:
   bootstrap-over-input-models, CRN, and a ranking-flip/indifference-set
   report across dispatch policies for ride-hailing. No pivot triggered.
   Redo more rigorously before submitting anywhere.
+- **Pre-registration done**: `docs/pre_registration.md`, committed
+  2026-08-04. Locks in P1's validation acceptance thresholds (KS distance
+  ≤ 0.10, hour-of-day cosine similarity ≥ 0.90, ward-count/cancellation-
+  rate bands), the abandonment-hazard sweep specs, mean wait time as the
+  primary P3 metric, α=0.05 for the indifference set, a minimum
+  `n_bootstrap≥40` (grounded in `docs/mde_scaling_validation.md`'s own
+  finding that 15 was unstable), and a B5 gap-closed reporting commitment
+  (grounded in the finding below that 300s patience makes B5 not a real
+  upper bound). Explicitly scoped to the not-yet-run confirmatory study
+  against real data — see the doc for why this counts as *before* that
+  run despite the extensive exploratory/methodology work already in this
+  repo.
 - **C5's ward-boundary crosswalk built and validated**:
   `docs/census_bbmp_data.md`. Census 2011 ward-level demographics
   (population, SC/ST share, household amenities) are real and downloadable
