@@ -509,8 +509,16 @@ What that produced, once real Bengaluru anchors were used instead of NYC's:
 
 ```bash
 uv sync              # installs polars, numpy, scipy, pytest, ruff, networkx
-uv run pytest -q     # 103 tests: engine correctness, calibration recovery, adapters, B1-B5, tuning, CRN scenario, P3, ward crosswalk, decision currency, compute parity, coarsening ladder
+uv run pytest -q     # 107 tests: engine correctness, calibration recovery, adapters, B1-B5, tuning, CRN scenario, P3, ward crosswalk, decision currency, compute parity, coarsening ladder
 uv run ruff check .  # lint
+```
+
+To run the confirmatory study end to end (P1 calibration → P2 tuning →
+P3 bootstrap-CRN with B5 wired in), per `docs/pre_registration.md`'s
+committed settings:
+
+```bash
+uv run python run_study.py --n-bootstrap 40 --n-replications 4   # ~4.5 min; writes results/study_results.parquet
 ```
 
 To generate a small synthetic dataset and poke at it interactively:

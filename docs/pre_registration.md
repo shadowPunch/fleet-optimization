@@ -107,13 +107,20 @@ headline bound, or (b) explicitly caption the 300s-patience numbers as
 "relative to a conservative reference schedule," never as "fraction of
 the theoretical maximum" without that qualifier.
 
-## Not yet built: `run_study.py`
+## `run_study.py`
 
 The plan also calls for "one `run_study.py` that regenerates every figure
-from raw data" — a single entrypoint tying together calibration, the
-bootstrap-CRN loop, and every C3-C6 output, rather than the current set of
-separate `analysis/*.py` scripts. Not built as of this commit; the
-individual scripts are each independently runnable and cache their own
-results, which has been sufficient for the development work so far, but a
-real submission needs the single-entrypoint version this section
-pre-commits to eventually building, not scoped further here.
+from raw data." Built: `run_study.py` at the project root runs P1
+calibration, P2 tuning, and the P3 bootstrap-CRN experiment (with B5
+wired in) end to end, and writes every `(policy, bootstrap_draw,
+replication) → metrics` cell to one parquet file — not just summary
+statistics — with every headline number it prints computed from that same
+in-memory table. Real run at the pre-registered minimum
+(`--n-bootstrap 40 --n-replications 4`, ~4.5 minutes): 800 rows written,
+consistent with every other finding in this document (B2 cleanly wins,
+every online policy still beats B5's bound at 300s patience by ~17-23%).
+It does not yet cover C3-C6 (decision currency, compute parity, the
+crosswalk, the coarsening ladder) — those remain the separate
+`analysis/*.py` scripts they already are, which is fine for exploratory
+work; folding them into `run_study.py` as it matures toward "regenerates
+every figure" is a reasonable future step, not done here.
