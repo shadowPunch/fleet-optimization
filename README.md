@@ -313,19 +313,24 @@ Design choices worth knowing about:
   the variance-decomposition-only unit tests), and the plan's own
   "metamodel-assisted" fallback for when B×R×|policies| gets too expensive
   hasn't been needed (or built) at this scale. **B5's clairvoyant bound is
-  now wired in**: `run_ranking_flip_experiment(..., compute_clairvoyant=True)`
+  wired in and fixed**: `run_ranking_flip_experiment(..., compute_clairvoyant=True)`
   solves B5 once per (b, r) (not per policy — it doesn't depend on which
   one) on the same realized scenario every policy sees, and
   `RankingFlipResult.fraction_of_gap_closed(baseline)` reports the plan's
-  own normalization. Real run against the tuned B0-B4 ladder
-  (`analysis/clairvoyant_gap_closed_run.py`, B=15, R=3): **every policy
-  from B1 up beat the "upper" bound by 5-10%** — B5's own documented
-  pessimistic-pinning approximation (see `clairvoyant.py`) is loose enough
-  at `mean_patience_seconds=300.0` to not actually be an upper bound in
-  practice, confirmed in real use rather than just anticipated in that
-  module's docstring. A gap-closed report at this patience setting should
-  either use a shorter patience window or present the numbers as relative
-  to a conservative reference schedule, not a theoretical maximum.
+  own normalization. First real run against the tuned B0-B4 ladder found
+  every policy from B1 up beating the "upper" bound by 5-10% — not a
+  finding about these policies, but two real bugs in B5 itself: a
+  pessimistic exit-pinning that over-constrained capacity (fixed into a
+  genuine earliest-feasible-release relaxation) and a `bin_minutes` too
+  coarse for `mean_patience_seconds=300.0`, silently excluding 67.5% of
+  requests as "unservable" before the solver ever saw them (fixed by
+  using a finer bin at this project's small zone counts, and made visible
+  going forward via `ClairvoyantResult.fraction_excluded_by_discretization`).
+  Both fixes together, re-measured at B=200: B1/B3/B4 close 90-93% of the
+  gap and B2 closes 95%, all properly below 1.0 — a believable result,
+  not the old bugs. See `src/dispatch_eval/clairvoyant.py`'s module
+  docstring for the full diagnosis and `docs/pre_registration.md` for the
+  updated gap-closed reporting commitment.
 - **The oracle-forecast confound — checked, and ruled out for the axes
   tested**: every rigorous comparison in `docs/indifference_search.md`
   let B2-B4 forecast the world through models fit *the same way, on the
@@ -586,13 +591,15 @@ uv run python run_study.py --n-bootstrap 200 --n-replications 5  # ~26 min, the 
 ```
 
 Run at both scales already (`docs/pre_registration.md` has the full
-comparison): the headline numbers barely move between B=40 and B=200 —
-same ranking, same indifference set, gap-closed fractions matching to two
-decimal places — which validates the pre-registered `n_bootstrap ≥ 40`
-minimum for *ranking* stability specifically. The variance decomposition
-itself (`input_uncertainty_ratio`) moved more between the two scales
-(0.314 → 0.239, same qualitative story), so report that one off the full
-200 draws, not 40.
+comparison): the ranking itself is identical at B=40 and B=200 — same
+nominal ranking, same indifference set — which validates the
+pre-registered `n_bootstrap ≥ 40` minimum for *ranking* stability
+specifically. The variance decomposition itself (`input_uncertainty_ratio`)
+moved more between the two scales (0.314 → 0.239, same qualitative
+story), so report that one off the full 200 draws, not 40. Gap-closed
+fractions are only meaningful from the B=200 run onward — the B=40 run
+predates the B5 relaxation/discretization fix described below and its
+gap-closed numbers are superseded, not a second data point.
 
 To generate a small synthetic dataset and poke at it interactively:
 

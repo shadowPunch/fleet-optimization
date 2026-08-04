@@ -126,33 +126,45 @@ estimate.
 **Checked against the plan's own target scale, not just asserted**:
 `run_study.py` was run once at the pre-registered minimum
 (`--n-bootstrap 40 --n-replications 4`, 800 rows) and once at the plan's
-target (`--n-bootstrap 200 --n-replications 5`, 5000 rows,
-`results/study_results_at_scale.parquet`). The headline numbers barely
-moved between them — gap-closed fractions matched to two decimal places
-(e.g. B2: 1.233 at B=40 vs. 1.234 at B=200), same nominal ranking, same
-indifference set. **This validates the `n_bootstrap ≥ 40` minimum for
-*ranking stability* specifically** — P(ranked first) and the indifference
-set were already converged at 40 draws for this comparison. It does
-*not* extend that validation to fine-grained variance estimates: the
-`input_uncertainty_ratio` itself moved more (0.314 at B=40 → 0.239 at
-B=200, still directionally consistent — within-theta noise dominates
-either way) — consistent with `docs/mde_scaling_validation.md`'s own
-finding that variance-type statistics need more draws to stabilize than
-a ranking does. Report a ranking off 40 draws with reasonable confidence;
-report a variance decomposition off nothing less than the full 200.
+target (`--n-bootstrap 200 --n-replications 5`, 5000 rows). The ranking
+itself was already fully converged at 40 draws: identical nominal
+ranking and indifference set (`{B2_value_corrected}`) at both scales,
+confirmed again after the B5 fix below (same result a third time, at
+B=200, `results/study_results_at_scale_v2.parquet`). **This validates
+the `n_bootstrap ≥ 40` minimum for *ranking stability* specifically.** It
+does *not* extend to fine-grained variance estimates: the
+`input_uncertainty_ratio` itself moved between scales (0.314 at B=40 →
+0.239 at B=200, same qualitative conclusion both times) — consistent
+with `docs/mde_scaling_validation.md`'s own finding that variance-type
+statistics need more draws to stabilize than a ranking does. Report a
+ranking off 40 draws with reasonable confidence; report a variance
+decomposition off nothing less than the full 200.
+
+Gap-closed fractions from the *first* B=40/B=200 comparison (1.05-1.23,
+every policy beating the bound) are superseded by the B5 fix directly
+below — they were an artifact of the two bugs described there, not a
+finding about these policies. The corrected B=200 run
+(`study_results_at_scale_v2.parquet`) reports B1/B3/B4 closing 90-93% of
+the gap and B2 closing 95%, all properly below 1.0.
 
 ## B5 clairvoyant gap-closed reporting
 
-`docs/coarsening_ladder.md` and `clairvoyant.py`'s own docstring document
-a real finding: at `mean_patience_seconds=300.0`, every tuned online
-policy from B1 up beat B5's "upper" bound by 5-10%, because the pinning
-approximation is loose enough at that patience setting to not actually be
-an upper bound. **Pre-registered commitment**: any confirmatory-study
-gap-closed report must either (a) also compute B5 at a shorter patience
-window (60-120s, from the sweep above) and use that version as the
-headline bound, or (b) explicitly caption the 300s-patience numbers as
-"relative to a conservative reference schedule," never as "fraction of
-the theoretical maximum" without that qualifier.
+**Fixed, not just worked around.** `docs/coarsening_ladder.md` and
+`clairvoyant.py`'s own docstring originally documented every tuned online
+policy beating B5's "upper" bound by 5-10% — diagnosed down to two actual
+bugs (pessimistic exit-pinning that over-constrained capacity, and a
+`bin_minutes` too coarse for `mean_patience_seconds=300.0`, silently
+excluding 67.5% of requests as "unservable" before the solver ever saw
+them) and fixed at the source, not patched around with a caveat. Both
+fixes together, re-measured at B=200: gap-closed fractions of 0.90-0.95
+across B1-B4, all properly below 1.0, with 9.4% of requests still
+excluded by discretization (`ClairvoyantResult.fraction_excluded_by_discretization`
+— report this number alongside any gap-closed figure; it isn't yet
+zero). **Pre-registered commitment, updated**: any confirmatory-study
+gap-closed report must state `clairvoyant_bin_minutes` used and the
+resulting `fraction_excluded_by_discretization` explicitly — a number
+not near zero means the bound isn't trustworthy yet at that setting,
+regardless of how plausible the resulting gap-closed figure looks.
 
 ## `run_study.py`
 
@@ -162,12 +174,12 @@ calibration, P2 tuning, and the P3 bootstrap-CRN experiment (with B5
 wired in) end to end, and writes every `(policy, bootstrap_draw,
 replication) → metrics` cell to one parquet file — not just summary
 statistics — with every headline number it prints computed from that same
-in-memory table. Real run at the pre-registered minimum
-(`--n-bootstrap 40 --n-replications 4`, ~4.5 minutes): 800 rows written,
-consistent with every other finding in this document (B2 cleanly wins,
-every online policy still beats B5's bound at 300s patience by ~17-23%).
-It does not yet cover C3-C6 (decision currency, compute parity, the
-crosswalk, the coarsening ladder) — those remain the separate
+in-memory table. Run at both the pre-registered minimum
+(`--n-bootstrap 40`) and the plan's target scale (`--n-bootstrap 200`,
+after the B5 fix): consistent with every other finding in this document
+(B2 cleanly wins; B1-B4 close 90-95% of the clairvoyant gap, properly
+below 1.0). It does not yet cover C3-C6 (decision currency, compute
+parity, the crosswalk, the coarsening ladder) — those remain the separate
 `analysis/*.py` scripts they already are, which is fine for exploratory
 work; folding them into `run_study.py` as it matures toward "regenerates
 every figure" is a reasonable future step, not done here.
