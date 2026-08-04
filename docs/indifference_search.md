@@ -3,6 +3,16 @@
 **Status: found. Not between different dispatch mechanisms (checked four
 ways, always no) — between close settings of the *same* mechanism.**
 
+**Update**: the "no indifference between mechanisms" result below was
+checked against a real, sharp alternative explanation — that B2-B4's
+apparent advantage is really an oracle-forecast artifact, since their
+value function/reposition logic was built from models fit the same way
+the true world is generated. `docs/forecast_degradation.md` rules that
+out across nine degradation levels, including one removing all spatial
+demand knowledge from the forecast entirely — the separation below holds
+up, not explained away by that confound (though it opens its own, still
+open question about *why* it holds up).
+
 ## Why this question, and why it matters
 
 The plan's central thesis is that policy rankings are often *not*
