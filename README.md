@@ -16,23 +16,45 @@ set, not a winner, when they don't.
 
 ## Data status (read this before trusting any number out of this repo)
 
-There is no Indian-city equivalent of NYC TLC's trip-level data. Two sources
-fill the primary/secondary roles, and they are **not equally trustworthy**:
+**Amended 2026-08-04** (see `dispatch-evaluation-project-plan.md` §2 and
+`docs/pre_registration.md` for the full, dated rationale — made before any
+real-data validation was attempted, not after one failed): the original
+plan treated Bengaluru's Namma Yatri aggregates as the primary validation
+source. That turned out untenable, not just imperfect — those aggregates
+have **no `request_datetime`/`pickup_datetime` split at all**, so wait
+time (this project's central metric) isn't observable from them under any
+circumstance. Roles restructured accordingly:
 
-- **Bengaluru — Namma Yatri Open Data** (real, live, ward-level aggregates
-  only; no trip-level timestamps or OD structure).
-- **Delhi NCR — a Kaggle ride-booking dataset** (trip-level shape, but
-  **treated as synthetic** — unverified provenance).
+- **NYC TLC data — the primary methodological study.** Real, verified
+  (`sources/nyc_tlc.py`, checked against the live parquet schema), with
+  real trip-level timestamps — the only source here that can actually
+  falsify P1's validation thresholds. P1, C1, C2, C3, and C6's
+  "real trip-level data" direction all run against this.
+- **Bengaluru — Namma Yatri Open Data — a dedicated applicability
+  study.** Real, live, ward-level aggregates only (no trip-level
+  timestamps or OD). Can't support P1/C2, but is exactly the right target
+  for C6's actual question: what can honestly be concluded from
+  ward-level Indian open mobility data alone? A separate contribution,
+  not downstream of the NYC study.
+- **Delhi NCR — a Kaggle ride-booking dataset — dropped from every
+  result.** Trip-level shape, but unverified, plausibly-synthetic
+  provenance; presenting it as real would undercut a project about
+  statistical honesty. The schema adapter (`sources/delhi_ncr.py`) and
+  its tests stay as a working capability, unused for any claimed result.
 
-Neither has been downloaded into this repo yet (no Kaggle credentials or
-scraper configured in this environment). Everything currently runs against
+Neither NYC nor Bengaluru data has actually been fetched and run against
+the pre-registered thresholds yet — `analysis/nyc_reference_comparison.py`
+has already pulled and cached one day of real NYC data for shape
+validation, which is the natural starting point, but the full P1
+validation run against it is still open. Everything in this repo's own
+test suite and analysis scripts currently runs against
 `dispatch_eval.sources.synthetic`, a generator that produces schema-valid
-trip records from a chosen, arbitrary ground truth — useful for building and
-testing the harness, not for any claim about a real city. See
-`dispatch-evaluation-project-plan.md` §2 and `docs/observability_table.md`
-for the full reasoning, and `sources/delhi_ncr.py` / `sources/bengaluru.py`
-for what's needed to plug in the real files once downloaded (mainly:
-confirming the actual column names against `DEFAULT_COLUMN_MAP` in each).
+trip records from a chosen, arbitrary ground truth — useful for building
+and testing the harness (and, per `docs/forecast_degradation.md` and
+`docs/indifference_search.md`, for real methodology development that
+already found and fixed real bugs), not for any claim about a real city.
+See `docs/observability_table.md` for the full quantity-by-quantity
+observability audit.
 
 ## Architecture
 

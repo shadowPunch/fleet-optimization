@@ -335,6 +335,20 @@ def variance_decomposition(metric_a: np.ndarray, metric_b: np.ndarray) -> dict[s
     of each draw's mean. `input_uncertainty_ratio` is the headline number
     the plan calls for: "input uncertainty contributes Nx the variance of
     simulation noise."
+
+    **This is a floor on input uncertainty's true contribution, not an
+    estimate of it** — the plan's own three-part C1 decomposition is
+    intrinsic noise, input-model estimation error, *and structural
+    ambiguity*, but the bootstrap loop this function's inputs come from
+    only ever refits within a fixed, correctly-specified model family
+    (NHPP / smoothed-OD / lognormal travel time). Structural
+    misspecification — usually the dominant real-world forecast-error
+    term — is exactly zero here by construction, so `across_theta_variance`
+    (and therefore `input_uncertainty_ratio`) can only be an
+    underestimate of what a real deployment would see. See
+    `forecast_degradation.py` for the (separate, not-yet-integrated-here)
+    tool that makes structural ambiguity checkable at all, and
+    `docs/forecast_degradation.md` for what it found.
     """
     diff = metric_a - metric_b
     within_theta = float(diff.var(axis=1, ddof=1).mean())

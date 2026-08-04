@@ -30,18 +30,47 @@ this environment). Pre-registering *after* that development work but
 a late pre-registration — the thresholds below were not chosen by looking
 at what the confirmatory run produces, because that run hasn't happened.
 
+## Amendment, 2026-08-04 — data-source roles restructured
+
+Made **before** any real-data validation was attempted against any
+source (see `dispatch-evaluation-project-plan.md`'s own dated amendment,
+§2, for the full rationale) — a legitimate time to amend a pre-commitment
+because the primary source turned out unable to support it, which is a
+different thing from amending after seeing a validation fail. In short:
+Namma Yatri's ward aggregates have no `request_datetime`/`pickup_datetime`
+split at all, so wait time — the metric the KS-distance threshold below
+was written against — is not observable from that source under any
+circumstance, not just difficult to obtain. Delhi NCR's Kaggle set
+remains of unverified, plausibly-synthetic provenance and is dropped from
+every result.
+
+**What changes below**: "Wait-time distribution" and "Hour-of-day arrival
+shape" are validated against **real NYC TLC data**
+(`sources/nyc_tlc.py`, verified against the live schema), not Bengaluru —
+this is the only source in this project with real trip-level timestamps
+to validate against at all. "Ward-level trip counts" and "Cancellation
+rate" are unchanged in mechanism (Namma Yatri's aggregates are exactly
+the right shape for a count-level check) but now belong to Bengaluru's
+own separate applicability study (C6, pointed at real Namma Yatri data),
+not to the main confirmatory P1 run — a study that answers "what can be
+concluded from ward-level aggregates alone," not "does the simulator
+reproduce Bengaluru specifically." Neither NYC nor Bengaluru data has
+actually been fetched and run against these thresholds yet as of this
+commit — that is the concrete next step this amendment sets up, not
+something this amendment itself completes.
+
 ## P1 validation acceptance thresholds
 
 Per the plan's P1 section, checked against held-out days not used for
-fitting:
+fitting. **Target source for each row updated per the amendment above.**
 
-| Check | Metric | Threshold | Status if failed |
-|---|---|---|---|
-| Wait-time distribution | KS distance (`calibration.fleet_size.ks_distance`) between simulated and observed wait times | ≤ 0.10 | Simulator does not reproduce the wait-time distribution's *shape* — see "if this fails" below |
-| Hour-of-day arrival shape | Cosine similarity between simulated and observed hourly request-count vectors (same metric as `analysis/nyc_reference_comparison.py`'s `hourly_cosine_similarity`) | ≥ 0.90 | Arrival timing shape is not well recovered |
-| Ward-level trip counts | Simulated vs. Namma Yatri's published per-ward aggregate counts, relative error | within ±20% | Spatial demand shape is off — investigate before trusting C5 |
-| Cancellation rate | Simulated vs. published aggregate cancellation rate | within ±5 percentage points (absolute) | Abandonment-hazard specification needs revisiting |
-| Trips/vehicle-hour, empty-mile fraction, revenue/vehicle-hour | vs. any available real anchor | **Secondary** — checked and reported if a real anchor exists at all (per `docs/observability_table.md`, most of these are latent in the public data), not a hard pass/fail gate |
+| Check | Metric | Threshold | Validate against | Status if failed |
+|---|---|---|---|---|
+| Wait-time distribution | KS distance (`calibration.fleet_size.ks_distance`) between simulated and observed wait times | ≤ 0.10 | **NYC TLC** (real trip-level `request_datetime`) | Simulator does not reproduce the wait-time distribution's *shape* — see "if this fails" below |
+| Hour-of-day arrival shape | Cosine similarity between simulated and observed hourly request-count vectors (same metric as `analysis/nyc_reference_comparison.py`'s `hourly_cosine_similarity`) | ≥ 0.90 | **NYC TLC** | Arrival timing shape is not well recovered |
+| Ward-level trip counts | Simulated vs. published per-ward aggregate counts, relative error | within ±20% | **Namma Yatri** (Bengaluru applicability study, C6 — not the main P1 run) | Spatial demand shape is off |
+| Cancellation rate | Simulated vs. published aggregate cancellation rate | within ±5 percentage points (absolute) | **Namma Yatri** (same, C6) | Abandonment-hazard specification needs revisiting |
+| Trips/vehicle-hour, empty-mile fraction, revenue/vehicle-hour | vs. any available real anchor | **Secondary** — checked and reported if a real anchor exists at all (per `docs/observability_table.md`, most of these are latent in the public data), not a hard pass/fail gate | NYC where available | — |
 
 **0.10 for KS distance is a practical-similarity threshold, not a formal
 hypothesis-test critical value** — at the trip volumes this project
