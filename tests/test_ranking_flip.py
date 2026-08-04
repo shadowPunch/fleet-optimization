@@ -125,6 +125,75 @@ def test_ranking_flip_experiment_shapes_and_probabilities(trips_df):
     assert np.all((taus >= -1.0) & (taus <= 1.0))
 
 
+def test_compute_clairvoyant_false_by_default_leaves_field_none(trips_df):
+    policies = {"B0": NearestIdlePolicy(), "B1": BatchedHungarianPolicy()}
+    config = StudyConfig(zones=ZONES, day_type="all", horizon_seconds=6 * 3600.0)
+    abandonment_model = AbandonmentModel(mean_patience_seconds=300.0)
+
+    result = run_ranking_flip_experiment(
+        trips_df, ZONES, policies, fleet_size=20, abandonment_model=abandonment_model,
+        config=config, n_bootstrap=3, n_replications=2, seed=1,
+    )
+    assert result.clairvoyant_metric_by_draw is None
+
+
+def test_compute_clairvoyant_true_fills_a_plausible_bound(trips_df):
+    policies = {"B0": NearestIdlePolicy(), "B1": BatchedHungarianPolicy()}
+    config = StudyConfig(zones=ZONES, day_type="all", horizon_seconds=6 * 3600.0)
+    abandonment_model = AbandonmentModel(mean_patience_seconds=300.0)
+
+    result = run_ranking_flip_experiment(
+        trips_df, ZONES, policies, fleet_size=20, abandonment_model=abandonment_model,
+        config=config, n_bootstrap=3, n_replications=2, seed=1, compute_clairvoyant=True,
+    )
+
+    assert result.clairvoyant_metric_by_draw is not None
+    assert result.clairvoyant_metric_by_draw.shape == (3, 2)
+    assert np.all(np.isfinite(result.clairvoyant_metric_by_draw))
+    assert np.all(result.clairvoyant_metric_by_draw >= 0.0)
+    # a true (or near-true, given B5's documented pessimistic-pinning
+    # approximation) upper bound should on average not exceed a real
+    # online policy's own mean wait
+    assert result.clairvoyant_metric_by_draw.mean() <= result.metric_by_policy["B0"].mean()
+
+
+def test_fraction_of_gap_closed_requires_clairvoyant_computed(trips_df):
+    policies = {"B0": NearestIdlePolicy(), "B1": BatchedHungarianPolicy()}
+    config = StudyConfig(zones=ZONES, day_type="all", horizon_seconds=6 * 3600.0)
+    abandonment_model = AbandonmentModel(mean_patience_seconds=300.0)
+
+    result = run_ranking_flip_experiment(
+        trips_df, ZONES, policies, fleet_size=20, abandonment_model=abandonment_model,
+        config=config, n_bootstrap=2, n_replications=2, seed=1,
+    )
+    with pytest.raises(ValueError, match="compute_clairvoyant"):
+        result.fraction_of_gap_closed("B0")
+
+
+def test_fraction_of_gap_closed_arithmetic_on_a_fake_result():
+    baseline = np.array([[100.0, 100.0], [100.0, 100.0]])
+    matches_clairvoyant = np.array([[50.0, 50.0], [50.0, 50.0]])
+    same_as_baseline = baseline.copy()
+    clairvoyant = np.array([[50.0, 50.0], [50.0, 50.0]])
+
+    result = RankingFlipResult(
+        policy_names=["baseline", "matches_clairvoyant", "same_as_baseline"],
+        metric_by_policy={
+            "baseline": baseline,
+            "matches_clairvoyant": matches_clairvoyant,
+            "same_as_baseline": same_as_baseline,
+        },
+        rankings=np.zeros((2, 3), dtype=int),
+        nominal_ranking=["matches_clairvoyant", "same_as_baseline", "baseline"],
+        clairvoyant_metric_by_draw=clairvoyant,
+    )
+
+    gap_closed = result.fraction_of_gap_closed("baseline")
+    assert np.allclose(gap_closed["baseline"], 0.0)
+    assert np.allclose(gap_closed["matches_clairvoyant"], 1.0)
+    assert np.allclose(gap_closed["same_as_baseline"], 0.0)
+
+
 def test_variance_decomposition_is_zero_for_identical_series():
     metric = np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
     result = variance_decomposition(metric, metric)

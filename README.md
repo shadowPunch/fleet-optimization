@@ -290,8 +290,20 @@ Design choices worth knowing about:
   small-scale synthetic runs so far (B≤5 for the full experiment, B≤200 for
   the variance-decomposition-only unit tests), and the plan's own
   "metamodel-assisted" fallback for when B×R×|policies| gets too expensive
-  hasn't been needed (or built) at this scale. B5's clairvoyant bound also
-  isn't wired into the loop yet for a "fraction of gap closed" metric.
+  hasn't been needed (or built) at this scale. **B5's clairvoyant bound is
+  now wired in**: `run_ranking_flip_experiment(..., compute_clairvoyant=True)`
+  solves B5 once per (b, r) (not per policy — it doesn't depend on which
+  one) on the same realized scenario every policy sees, and
+  `RankingFlipResult.fraction_of_gap_closed(baseline)` reports the plan's
+  own normalization. Real run against the tuned B0-B4 ladder
+  (`analysis/clairvoyant_gap_closed_run.py`, B=15, R=3): **every policy
+  from B1 up beat the "upper" bound by 5-10%** — B5's own documented
+  pessimistic-pinning approximation (see `clairvoyant.py`) is loose enough
+  at `mean_patience_seconds=300.0` to not actually be an upper bound in
+  practice, confirmed in real use rather than just anticipated in that
+  module's docstring. A gap-closed report at this patience setting should
+  either use a shorter patience window or present the numbers as relative
+  to a conservative reference schedule, not a theoretical maximum.
 - **P0.1** (novelty check) — done, provisional GO: `docs/p0_novelty_check.md`.
   A web-search pass (not a full Scholar/WSC-archive traversal — see the
   memo's own caveat) across the plan's five required strings plus the
@@ -541,9 +553,11 @@ df = generate_synthetic_trips(
    sweep — found it**: B2 at `value_weight` in `{0.5, 0.75, 1.0, 1.5}` are
    all mutually indistinguishable (`value_weight_sweep_run.py`), giving
    C6 the close pair it needed — see the C6 entry above for what that
-   sharper coarsening run found. Still open: wire B5's clairvoyant bound
-   into the ranking-flip loop to report "fraction of clairvoyant gap
-   closed" per policy per draw.
+   sharper coarsening run found. **B5's clairvoyant bound is wired in
+   too** (`compute_clairvoyant=True`, `fraction_of_gap_closed`) — see the
+   P3 status entry above for the real result (every policy beat the
+   "bound" at this patience setting, a genuine confirmation of B5's own
+   documented approximation, not a new problem).
 5. Run P3 at something closer to the plan's real scale (B≈200-500) — only
    small (B≤5 for the full experiment) synthetic smoke runs so far. Watch
    whether B×R×|policies| actually needs the plan's metamodel-assisted

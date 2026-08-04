@@ -56,11 +56,27 @@ gets *more* conservative as patience windows widen relative to trip
 durations — worth keeping in mind when picking abandonment-hazard
 specifications to run this against in P3.
 
+**Confirmed in production use, not just in a unit test**: wired into
+`ranking_flip.run_ranking_flip_experiment` via `compute_clairvoyant=True`
+and run against the tuned B0-B4 ladder
+(`analysis/clairvoyant_gap_closed_run.py`, `mean_patience_seconds=300.0`),
+every policy from B1 up — not just an edge case — beat this "upper" bound
+by 5-10% (`fraction_of_gap_closed` of 1.05-1.10, where 1.0 would mean
+exactly matching it). At this patience setting the pinning approximation
+is loose enough to be a real bound in name only; a report built on this
+module should either use a much shorter patience window or present the
+gap-closed numbers as "relative to a conservative reference schedule," not
+as "the theoretical maximum."
+
 This solver's input is a fixed, already-realized list of requests — how
 that list gets generated (and whether it's the *same* realized trace across
 different policies, which the "gap closed" comparison requires) is entirely
 the caller's responsibility. See the README's note on the engine's current
 random-number handling before wiring this into a cross-policy comparison.
+`ranking_flip.run_ranking_flip_experiment(..., compute_clairvoyant=True)`
+does exactly this correctly (same-seed scenario reproduction, see its own
+docstring) — that's the intended way to use this module for a real
+gap-closed report, not calling it standalone per policy.
 """
 
 from __future__ import annotations

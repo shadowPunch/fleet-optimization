@@ -48,6 +48,7 @@ from dispatch_eval.calibration.arrivals import fit_arrival_model
 from dispatch_eval.calibration.fare import fit_fare_model
 from dispatch_eval.calibration.od import fit_od_model
 from dispatch_eval.calibration.travel_time import fit_travel_time_model
+from dispatch_eval.clairvoyant import solve_clairvoyant_schedule
 from dispatch_eval.models import (
     AbandonmentModel,
     FareModel,
@@ -56,7 +57,9 @@ from dispatch_eval.models import (
     TravelTimeModel,
 )
 from dispatch_eval.policies.base import DispatchPolicy
+from dispatch_eval.scenario import generate_scenario
 from dispatch_eval.simulator.engine import SimulationResult
+from dispatch_eval.simulator.entities import Vehicle
 from dispatch_eval.simulator.runner import StudyConfig, run_simulation
 
 
@@ -100,6 +103,32 @@ class RankingFlipResult:
     metric_by_policy: dict[str, np.ndarray]  # each: shape (n_bootstrap, n_replications)
     rankings: np.ndarray  # shape (n_bootstrap, n_policies): policy indices, best first
     nominal_ranking: list[str]  # ranking fit on the un-resampled data
+    clairvoyant_metric_by_draw: np.ndarray | None = None  # shape (n_bootstrap, n_replications)
+
+    def fraction_of_gap_closed(self, baseline_policy: str) -> dict[str, np.ndarray]:
+        """B5's own normalization (project plan, B5 section): every policy's
+        metric expressed as the fraction of the gap between
+        `baseline_policy`'s metric and the clairvoyant bound that it
+        closes, per (bootstrap draw, replication) cell — 0.0 = no better
+        than baseline, 1.0 = matches the clairvoyant bound. Values outside
+        [0, 1] are possible: below 0 means worse than baseline; above 1
+        means beating the clairvoyant bound, which its own documented
+        pessimistic-pinning approximation (`clairvoyant.py`) makes
+        possible even though B5 is a true upper bound in principle.
+
+        Requires `run_ranking_flip_experiment(..., compute_clairvoyant=True)`.
+        """
+        if self.clairvoyant_metric_by_draw is None:
+            raise ValueError(
+                "clairvoyant bound was not computed for this result — "
+                "call run_ranking_flip_experiment with compute_clairvoyant=True"
+            )
+        baseline = self.metric_by_policy[baseline_policy]
+        denom = baseline - self.clairvoyant_metric_by_draw
+        return {
+            name: np.where(denom != 0, (baseline - self.metric_by_policy[name]) / denom, np.nan)
+            for name in self.policy_names
+        }
 
     def probability_ranked_first(self) -> dict[str, float]:
         """P(pi ranked first) for each policy, across bootstrap draws."""
@@ -142,6 +171,8 @@ def run_ranking_flip_experiment(
     metric_fn: Callable[[SimulationResult], float] = _mean_wait_seconds,
     bin_minutes: int = 15,
     od_time_bin_minutes: int = 60,
+    compute_clairvoyant: bool = False,
+    clairvoyant_bin_minutes: float = 15.0,
 ) -> RankingFlipResult:
     """Run the full B x R x |policies| bootstrap-CRN experiment.
 
@@ -162,6 +193,19 @@ def run_ranking_flip_experiment(
     at coarser time resolution is exactly its "how much of the ranking
     survives" question, and duplicating this whole loop elsewhere to vary
     two numbers would violate DRY for no benefit.
+
+    `compute_clairvoyant`, if set, additionally solves B5's offline bound
+    (`solve_clairvoyant_schedule`) once per (b, r) — not once per policy,
+    since it doesn't depend on which policy is being compared — on the
+    *same* realized scenario every policy sees at that (b, r): a second,
+    independently-created `np.random.Generator` seeded identically to each
+    policy's own (via the same `(seed, b, r)` `SeedSequence`) reproduces it
+    exactly, since scenario generation is the first and only thing that
+    seed's state determines before any policy-specific randomness begins.
+    See `RankingFlipResult.fraction_of_gap_closed` for what this enables —
+    off by default since it adds B x R min-cost-flow solves on top of this
+    function's existing B x R x |policies| simulation cost, for a result
+    most callers don't need.
     """
     policy_names = list(policies.keys())
 
@@ -190,6 +234,7 @@ def run_ranking_flip_experiment(
     nominal_ranking = sorted(policy_names, key=lambda name: nominal_metric[name])
 
     metric_by_policy = {name: np.zeros((n_bootstrap, n_replications)) for name in policy_names}
+    clairvoyant_metric = np.zeros((n_bootstrap, n_replications)) if compute_clairvoyant else None
     resample_rng = np.random.default_rng(np.random.SeedSequence([seed, _RESAMPLE_SENTINEL]))
 
     for b in range(n_bootstrap):
@@ -198,6 +243,32 @@ def run_ranking_flip_experiment(
             resampled, bin_minutes=bin_minutes, od_time_bin_minutes=od_time_bin_minutes
         )
         for r in range(n_replications):
+            if compute_clairvoyant:
+                scenario_rng = np.random.default_rng(np.random.SeedSequence([seed, b, r]))
+                scenario = generate_scenario(
+                    zones,
+                    config.day_type,
+                    models_b.arrival,
+                    models_b.od,
+                    abandonment_model,
+                    config.horizon_seconds,
+                    scenario_rng,
+                    config.od_bin_minutes,
+                )
+                cv_vehicles = [
+                    Vehicle(vehicle_id=f"veh-{i}", zone=zones[i % len(zones)])
+                    for i in range(fleet_size)
+                ]
+                cv_result = solve_clairvoyant_schedule(
+                    scenario.requests,
+                    cv_vehicles,
+                    models_b.travel_time,
+                    config.horizon_seconds,
+                    clairvoyant_bin_minutes,
+                )
+                cv_wait = cv_result.wait_times
+                clairvoyant_metric[b, r] = float(cv_wait.mean()) if cv_wait.size else float("inf")
+
             for name, policy in policies.items():
                 rng = np.random.default_rng(np.random.SeedSequence([seed, b, r]))
                 result = run_simulation(
@@ -220,6 +291,7 @@ def run_ranking_flip_experiment(
     return RankingFlipResult(
         policy_names=policy_names,
         metric_by_policy=metric_by_policy,
+        clairvoyant_metric_by_draw=clairvoyant_metric,
         rankings=rankings,
         nominal_ranking=nominal_ranking,
     )
