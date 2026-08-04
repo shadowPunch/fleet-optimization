@@ -540,11 +540,27 @@ df = generate_synthetic_trips(
    clean, confident finding for this fleet size (30) and scenario, but it
    also means **there's no close pair from this run to use for C6's
    sharper follow-up** — the plan's own thesis expects indifference to
-   show up in *some* regime, so the natural next check is sweeping fleet
-   size (C3's own natural axis) looking for where the separation narrows,
-   not assuming this one result is the final word. Still open: wire B5's
-   clairvoyant bound into the ranking-flip loop to report "fraction of
-   clairvoyant gap closed" per policy per draw.
+   show up in *some* regime, so the natural next check was sweeping fleet
+   size (C3's own natural axis) looking for where the separation narrows.
+   **That sweep is now done too** (`analysis/fleet_size_sensitivity_run.py`,
+   fleet_size ∈ {15, 30, 60}, tight/baseline/generous, B=25 each, ~6 min):
+   B2 wins with P(ranked first)=1.0 and is alone in its own indifference
+   set **at all three sizes** — the separation is robust across a 4x
+   fleet-size range, not something that narrows at either extreme, for
+   this specific policy set and scenario. A genuine finding, not a null
+   one: it suggests this project's baseline ladder compares *mechanisms*
+   that differ enough (greedy vs. globally-optimal vs. value-corrected
+   assignment) to sit well outside indifference regardless of fleet size,
+   unlike the close, few-percent gaps the novelty check found reported in
+   the literature (P0.1: "82.3s vs. 85.3s vs. 85.8s" — variants of the
+   *same* algorithm, not different mechanisms). The most natural remaining
+   candidate for a genuinely close pair is **B3 vs. B4** specifically —
+   both wrap the same tuned B2 dispatch logic and differ only in
+   repositioning heuristic (fluid target allocation vs. sampled
+   lookahead), the closest methodological pair in the whole ladder — not
+   yet run. Still open: wire B5's clairvoyant bound into the ranking-flip
+   loop to report "fraction of clairvoyant gap closed" per policy per
+   draw.
 5. Run P3 at something closer to the plan's real scale (B≈200-500) — only
    small (B≤5 for the full experiment) synthetic smoke runs so far. Watch
    whether B×R×|policies| actually needs the plan's metamodel-assisted
