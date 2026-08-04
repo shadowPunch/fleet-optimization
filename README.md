@@ -522,11 +522,29 @@ df = generate_synthetic_trips(
    "best score" here comes from a single fixed evaluation seed (the
    standard random-search-parity protocol, not a bootstrap-CRN paired
    comparison), so it shouldn't be read as "B3 is worse than B2" the way
-   a real C2/P3 run would license. The natural next step is plugging
-   these tuned configurations into an actual `ranking_flip.py` bootstrap
-   experiment, which *is* built for exactly this comparison. Still open:
-   wire B5's clairvoyant bound into the ranking-flip loop to report
-   "fraction of clairvoyant gap closed" per policy per draw.
+   a real C2/P3 run would license. **That follow-up is now done**:
+   `analysis/tuned_ranking_flip_run.py` feeds the tuned configs into a
+   real `run_ranking_flip_experiment` (B=40, R=4). One real methodological
+   wrinkle surfaced building it: each policy was tuned with its *own*
+   `dispatch_interval_seconds` (Δ), but `run_ranking_flip_experiment`
+   needs one `StudyConfig` shared across every policy for CRN pairing to
+   mean anything — Δ is an engine parameter, not a policy one (per
+   `batched_hungarian.py`'s own docstring). The tuned Δ values split into
+   two clusters (B1/B4 ~5.8s, B2/B3 ~28-31s) with no free-lunch shared
+   choice, so this run just uses `StudyConfig`'s project-wide default
+   (5.0s) rather than quietly favor one policy's preference. **Real
+   result, rigorously**: B2 (value-corrected) wins every single bootstrap
+   draw (P(ranked first)=1.0) and is the *only* member of its own
+   indifference set at α=0.05 — every other policy is statistically
+   distinguishable from it, not just numerically behind it. That's a
+   clean, confident finding for this fleet size (30) and scenario, but it
+   also means **there's no close pair from this run to use for C6's
+   sharper follow-up** — the plan's own thesis expects indifference to
+   show up in *some* regime, so the natural next check is sweeping fleet
+   size (C3's own natural axis) looking for where the separation narrows,
+   not assuming this one result is the final word. Still open: wire B5's
+   clairvoyant bound into the ranking-flip loop to report "fraction of
+   clairvoyant gap closed" per policy per draw.
 5. Run P3 at something closer to the plan's real scale (B≈200-500) — only
    small (B≤5 for the full experiment) synthetic smoke runs so far. Watch
    whether B×R×|policies| actually needs the plan's metamodel-assisted
