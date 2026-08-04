@@ -104,6 +104,7 @@ class RankingFlipResult:
     rankings: np.ndarray  # shape (n_bootstrap, n_policies): policy indices, best first
     nominal_ranking: list[str]  # ranking fit on the un-resampled data
     clairvoyant_metric_by_draw: np.ndarray | None = None  # shape (n_bootstrap, n_replications)
+    clairvoyant_fraction_excluded: np.ndarray | None = None  # same shape; see clairvoyant.py
 
     def fraction_of_gap_closed(self, baseline_policy: str) -> dict[str, np.ndarray]:
         """B5's own normalization (project plan, B5 section): every policy's
@@ -112,9 +113,14 @@ class RankingFlipResult:
         closes, per (bootstrap draw, replication) cell — 0.0 = no better
         than baseline, 1.0 = matches the clairvoyant bound. Values outside
         [0, 1] are possible: below 0 means worse than baseline; above 1
-        means beating the clairvoyant bound, which its own documented
-        pessimistic-pinning approximation (`clairvoyant.py`) makes
-        possible even though B5 is a true upper bound in principle.
+        means beating the clairvoyant bound, which is possible if
+        `clairvoyant_fraction_excluded` isn't near zero (see
+        `clairvoyant.py`'s module docstring — a `bin_minutes` too coarse
+        for the abandonment hazard's timescale silently drops servable
+        requests before the solver ever sees them, which is a real bug to
+        fix, not the clairvoyant solve's own honest upper-bound property).
+        Check `clairvoyant_fraction_excluded` before trusting values above
+        1 as a real finding rather than this bug.
 
         Requires `run_ranking_flip_experiment(..., compute_clairvoyant=True)`.
         """
@@ -250,6 +256,7 @@ def run_ranking_flip_experiment(
 
     metric_by_policy = {name: np.zeros((n_bootstrap, n_replications)) for name in policy_names}
     clairvoyant_metric = np.zeros((n_bootstrap, n_replications)) if compute_clairvoyant else None
+    clairvoyant_excluded = np.zeros((n_bootstrap, n_replications)) if compute_clairvoyant else None
     resample_rng = np.random.default_rng(np.random.SeedSequence([seed, _RESAMPLE_SENTINEL]))
 
     for b in range(n_bootstrap):
@@ -283,6 +290,7 @@ def run_ranking_flip_experiment(
                 )
                 cv_wait = cv_result.wait_times
                 clairvoyant_metric[b, r] = float(cv_wait.mean()) if cv_wait.size else float("inf")
+                clairvoyant_excluded[b, r] = cv_result.fraction_excluded_by_discretization
 
             for name, policy in policies.items():
                 rng = np.random.default_rng(np.random.SeedSequence([seed, b, r]))
@@ -308,6 +316,7 @@ def run_ranking_flip_experiment(
         policy_names=policy_names,
         metric_by_policy=metric_by_policy,
         clairvoyant_metric_by_draw=clairvoyant_metric,
+        clairvoyant_fraction_excluded=clairvoyant_excluded,
         rankings=rankings,
         nominal_ranking=nominal_ranking,
     )

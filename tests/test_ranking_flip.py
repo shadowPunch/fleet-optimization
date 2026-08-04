@@ -151,10 +151,35 @@ def test_compute_clairvoyant_true_fills_a_plausible_bound(trips_df):
     assert result.clairvoyant_metric_by_draw.shape == (3, 2)
     assert np.all(np.isfinite(result.clairvoyant_metric_by_draw))
     assert np.all(result.clairvoyant_metric_by_draw >= 0.0)
-    # a true (or near-true, given B5's documented pessimistic-pinning
-    # approximation) upper bound should on average not exceed a real
-    # online policy's own mean wait
+    # a genuine upper bound (see clairvoyant.py's relaxation) should on
+    # average not exceed a real online policy's own mean wait, *provided*
+    # bin_minutes is fine enough that clairvoyant_fraction_excluded is
+    # near zero -- checked separately below, not assumed here
     assert result.clairvoyant_metric_by_draw.mean() <= result.metric_by_policy["B0"].mean()
+
+
+def test_compute_clairvoyant_reports_discretization_exclusion(trips_df):
+    policies = {"B0": NearestIdlePolicy(), "B1": BatchedHungarianPolicy()}
+    config = StudyConfig(zones=ZONES, day_type="all", horizon_seconds=6 * 3600.0)
+    abandonment_model = AbandonmentModel(mean_patience_seconds=300.0)
+
+    fine = run_ranking_flip_experiment(
+        trips_df, ZONES, policies, fleet_size=20, abandonment_model=abandonment_model,
+        config=config, n_bootstrap=3, n_replications=2, seed=1, compute_clairvoyant=True,
+        clairvoyant_bin_minutes=1.0,
+    )
+    coarse = run_ranking_flip_experiment(
+        trips_df, ZONES, policies, fleet_size=20, abandonment_model=abandonment_model,
+        config=config, n_bootstrap=3, n_replications=2, seed=1, compute_clairvoyant=True,
+        clairvoyant_bin_minutes=15.0,
+    )
+
+    assert fine.clairvoyant_fraction_excluded is not None
+    assert fine.clairvoyant_fraction_excluded.shape == (3, 2)
+    assert np.all((fine.clairvoyant_fraction_excluded >= 0.0) & (fine.clairvoyant_fraction_excluded <= 1.0))
+    # coarser bins relative to mean_patience_seconds=300 should exclude
+    # more requests before the solver ever sees them, on average
+    assert coarse.clairvoyant_fraction_excluded.mean() > fine.clairvoyant_fraction_excluded.mean()
 
 
 def test_fraction_of_gap_closed_requires_clairvoyant_computed(trips_df):

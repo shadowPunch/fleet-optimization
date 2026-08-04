@@ -194,6 +194,12 @@ def main() -> None:
     result = run_ranking_flip_experiment(
         trips_df, ZONES, policies, fleet_calibration.fleet_size, abandonment_model, config,
         args.n_bootstrap, args.n_replications, args.seed, compute_clairvoyant=True,
+        # 15.0 (the function's own default) drops the large majority of
+        # requests as "unservable" purely from rounding at this project's
+        # mean_patience_seconds=300 -- see clairvoyant.py's module
+        # docstring. 1.0 is tractable here specifically because this
+        # script uses 5 zones.
+        clairvoyant_bin_minutes=1.0,
     )
 
     table = flatten_to_long_table(result, args.seed)
@@ -214,6 +220,10 @@ def main() -> None:
     print(f"Indifference set (alpha=0.05): {sorted(indifferent)}")
     print(f"Fraction of clairvoyant gap closed (mean per policy): "
           f"{ {name: float(arr.mean()) for name, arr in gap_closed.items()} }")
+    print(
+        "Clairvoyant fraction excluded by discretization (should be near zero): "
+        f"{result.clairvoyant_fraction_excluded.mean():.3f}"
+    )
     print(
         f"Variance decomposition ({result.nominal_ranking[0]} vs {result.nominal_ranking[-1]}): "
         f"input_uncertainty_ratio={decomp['input_uncertainty_ratio']:.3f}"

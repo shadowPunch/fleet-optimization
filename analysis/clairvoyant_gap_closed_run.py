@@ -9,6 +9,17 @@ with `compute_clairvoyant=True` and a smaller bootstrap budget (B5's
 min-cost-flow solve, once per (b, r), is real added cost on top of the
 usual B x R x |policies| simulation runs).
 
+`clairvoyant_bin_minutes=1.0` here, not the 15.0 default: at 15 minutes,
+this project's mean_patience_seconds=300s (5 minutes, a third of one bin)
+caused the solver to drop the large majority of requests as "unservable"
+purely from rounding, before ever seeing them — see clairvoyant.py's
+module docstring for the real, measured exclusion rate this caused.
+1.0 is tractable here specifically because this project's analysis
+scripts use 5 zones; the reposition-edge count scales as
+zones^2 * horizon_seconds/bin_seconds, so this would need revisiting at
+realistic ward counts. `clairvoyant_fraction_excluded` is reported below
+so this isn't silently trusted either.
+
 Usage: uv run python analysis/clairvoyant_gap_closed_run.py
 """
 
@@ -92,6 +103,7 @@ def main() -> None:
     result = run_ranking_flip_experiment(
         trips_df, ZONES, policies, FLEET_SIZE, abandonment_model, config,
         N_BOOTSTRAP, N_REPLICATIONS, SEED, compute_clairvoyant=True,
+        clairvoyant_bin_minutes=1.0,
     )
 
     gap_closed = result.fraction_of_gap_closed(BASELINE_POLICY)
@@ -105,6 +117,9 @@ def main() -> None:
     output = {
         "baseline_policy": BASELINE_POLICY,
         "clairvoyant_mean_wait_seconds": float(result.clairvoyant_metric_by_draw.mean()),
+        "clairvoyant_fraction_excluded_by_discretization": float(
+            result.clairvoyant_fraction_excluded.mean()
+        ),
         "per_policy_mean_wait_seconds": {
             name: float(arr.mean()) for name, arr in result.metric_by_policy.items()
         },
@@ -115,6 +130,10 @@ def main() -> None:
     print(f"\nWrote {OUTPUT_PATH}\n")
 
     print(f"Clairvoyant mean wait: {output['clairvoyant_mean_wait_seconds']:.1f}s")
+    print(
+        "Clairvoyant fraction excluded by discretization (should be near zero): "
+        f"{output['clairvoyant_fraction_excluded_by_discretization']:.3f}"
+    )
     for name, s in summary.items():
         print(
             f"{name}: mean_wait={output['per_policy_mean_wait_seconds'][name]:.1f}s, "
