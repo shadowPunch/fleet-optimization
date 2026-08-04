@@ -7,8 +7,26 @@ it's tied to ward boundaries that have since been redrawn **at least three
 times**, most recently by a full governance restructuring that replaced
 BBMP outright in September 2025. Joining it to any current ward-level trip
 data (Namma Yatri's included) needs a real GIS crosswalk, not an ID join.
-That crosswalk is buildable — the boundary files exist — but it's a
-genuine, nontrivial piece of work, not a formality.
+
+**Update: the crosswalk is now built** — `analysis/ward_crosswalk.py`,
+backed by `src/dispatch_eval/geo/crosswalk.py` (tested,
+`tests/test_crosswalk.py`). Two findings changed the plan from what was
+anticipated below:
+
+1. The current-era (369-ward) boundary turned out to be readily available
+   after all (OpenCity's official December-2025 GBA delimitation KML) —
+   the "may not be readily available yet" concern this doc raised
+   previously did not materialize.
+2. That same GBA file already carries **official total/SC/ST population
+   re-tabulated onto the new 369 wards** (`TOT_P`/`SC_P`/`ST_P`), which
+   matches the 2011 Census citywide totals to within 0.3% — almost
+   certainly the legally-required delimitation process's own reallocation.
+   **C5 should use those columns directly for population/SC/ST**, not this
+   project's own areal interpolation. The interpolation crosswalk is still
+   needed — and was validated against those same official columns — for
+   the Census variables the GBA file does *not* carry (household
+   amenities, literacy, worker categories): see "Crosswalk results" below
+   for its measured, non-trivial per-ward error on those.
 
 ## What's actually available
 
@@ -66,31 +84,99 @@ against. **A direct ward-ID join between Namma Yatri's data and Census
 2011 data would silently join the wrong geography to itself** — ward
 number 42 in 2011 and ward number 42 today are not the same polygon.
 
-This is solvable, not fatal: ward boundary shapefiles exist for multiple
-eras —
-[Datameet's municipal spatial data project](http://projects.datameet.org/Municipal_Spatial_Data/bangalore/),
-the [OpenBangalore GitHub shapefiles](https://github.com/openbangalore/bangalore/blob/master/bangalore/GIS/bbmpwards/bbmpwards.shp),
-and [BBMP/GBA's own GISViewer](https://bbmp.gov.in/gisviewer/) — enough to
-build a proper spatial crosswalk (area-weighted or population-weighted
-reallocation of 2011 ward attributes onto current ward polygons) rather
-than guessing at a correspondence. That crosswalk itself is a source of
-additional approximation error and should be reported as one, consistent
-with how every other data limitation in this project is handled (see
-`docs/observability_table.md`) — not smoothed over as a clean join.
+This turned out to be solvable, not fatal — the boundary files exist and
+the crosswalk is built. What actually worked, concretely:
+
+- **2011-era geometry (198 wards)**: Datameet's
+  [Municipal_Spatial_Data](https://github.com/datameet/Municipal_Spatial_Data)
+  GitHub repo, `Bangalore/BBMP_oldWards.geojson`. Its own embedded
+  `POP_TOTAL` field sums to 5.84M — it does **not** match the Census 2011
+  citywide total (8.44M) and must not be used; only its polygons are used,
+  joined to the authoritative OpenCity Census CSV via `WARD_NO` = `Ward
+  Num` (clean 198/198 match, confirmed).
+- **Current-era geometry (369 wards)**: found on OpenCity as the ["GBA
+  Wards Delimitation 2025 - Final Wards Map"](https://data.opencity.in/dataset/gba-wards-delimitation-2025)
+  dataset, `gba-369-wards-december-2025.kml` — the official December-2025
+  GBA delimitation, not a third-party scrape. This was flagged above as
+  possibly not readily available yet; it was in fact already published.
+  **Gotcha**: the KML's `ward_id` field is per-corporation, not global — it
+  restarts at 1 in each of the 5 city corporations, so 329 of 369 rows
+  share a `ward_id` with a same-numbered ward elsewhere in the city. The
+  real unique key is `Corporation-ward_id` (`src/dispatch_eval/geo` builds
+  this explicitly rather than trusting `ward_id` alone).
+- **The BBMP/GBA GISViewer itself** (`bbmp.gov.in/gisviewer`) was
+  unreachable (connection failure) — not needed in the end, since the
+  OpenCity KML above supplied the current boundary directly.
+
+The [BBMP old wards geojson](https://github.com/datameet/Municipal_Spatial_Data)
+and the GBA KML both load cleanly with `geopandas` (the KML via
+`driver="KML"`; its numeric fields are typed as strings in the KML schema
+and need `pd.to_numeric` before any arithmetic — a silent-string-concat
+bug caught during development, not shipped).
+
+### Crosswalk results
+
+`analysis/ward_crosswalk.py` reallocates every 2011 Census numeric column
+(population, sex, SC/ST, all sex-disaggregated) from the 198 old-ward
+polygons onto the 369 current-ward polygons by standard area-weighting —
+each source ward's value split across overlapping target wards in
+proportion to intersection area, i.e. assuming uniform population density
+within each 2011 ward. Two validations were run, not just asserted:
+
+1. **Geometry coverage** — do the old and current boundaries actually
+   cover the same ground? Yes: the current 369-ward union covers 717.2
+   km², the 2011 198-ward union covers 711.6 km², and on average 99.6% of
+   each current ward's own area falls inside the 2011 boundary (worst
+   case: 52%, zero wards below 50%). So per-ward error below is *not*
+   from missing source coverage (e.g. newly annexed land with no 2011
+   analog) — GBA is essentially a re-delimitation of the same city, not a
+   territorial expansion, at least by area.
+2. **Accuracy vs. the GBA's own official reallocation** — compare this
+   project's interpolated Population/SC-Population/ST-Population against
+   the GBA KML's own `TOT_P`/`SC_P`/`ST_P` (see the finding above: those
+   columns are themselves a Census-2011-consistent reallocation, so this
+   is a real ground truth, not a second guess). At the **citywide** level
+   the two agree closely (interpolated 8,398,719 vs. official 8,402,887,
+   0.05% off) — confirming both datasets describe the same underlying
+   population. At the **per-ward** level, area-weighting is noticeably
+   worse: median absolute error 24.4% for population (52.8%/43.1% mean
+   for SC/ST, which are smaller, patchier counts more sensitive to the
+   uniform-density assumption). The worst-error wards are explainable, not
+   noise — they're dense, built-up central neighborhoods (Indiranagar,
+   Malleshwaram, Rajajinagar) that got split into several new wards
+   covering unequal actual population despite roughly comparable area,
+   exactly where "uniform density within the old ward" fails hardest.
+
+**Conclusion**: area-weighting recovers the right citywide total but is a
+genuinely crude per-ward estimator (~25% typical error) — good enough to
+use *only* for the Census variables that have no official reallocation
+(household amenities, literacy, worker categories), and every C5 result
+built on those must carry this measured error band, not a vague caveat.
+For population/SC/ST specifically, use the GBA KML's own official columns
+directly and skip the interpolation error entirely. Full numeric detail is
+in `analysis/cache/ward_crosswalk_validation.json` (gitignored — rerun
+`uv run python analysis/ward_crosswalk.py` to regenerate; requires the raw
+boundary/census files, not committed, links above).
 
 ## What this actually gives C5
 
-Once the crosswalk exists, the Census 2011 extract supports:
+With the crosswalk built, the Census 2011 extract supports:
 
-- Total population and SC/ST population share per ward — the closest
-  available official proxy for the plan's original "race/income quantile"
-  framing, though SC/ST status is not equivalent to the US race categories
-  that framing was written around, and shouldn't be presented as if it
-  were a direct analog.
+- Total population and SC/ST population share per ward, at the current
+  369-ward scheme, at official-reallocation accuracy (via the GBA KML's
+  own columns) — the closest available proxy for the plan's original
+  "race/income quantile" framing, though SC/ST status is not equivalent to
+  the US race categories that framing was written around, and shouldn't be
+  presented as if it were a direct analog.
 - Household amenities (electricity, piped water, vehicle ownership) as a
   socioeconomic-status proxy, since Census doesn't publish household
-  income directly.
-- Literacy rate and worker-participation rate as additional SES proxies.
+  income directly — via this project's own areal interpolation, at ~25%
+  typical per-ward error (measured above, not assumed).
+- Literacy rate and worker-participation rate as additional SES proxies,
+  same interpolation and same error band — not yet downloaded (they're in
+  the data.gov.in Karnataka PCA file, not the OpenCity ward CSV used so
+  far; extending `analysis/ward_crosswalk.py` to them is a follow-up, not
+  new methodology).
 
 What it does **not** support: any caste breakdown finer than SC/ST, any
 income figure, or anything from 2025/2027 — the plan's C5 section should
@@ -100,9 +186,20 @@ a richer profile it can't actually get.
 ## Recommendation
 
 1. Use the OpenCity Census-2011 ward CSVs as the demographic source for C5.
-2. Build the spatial crosswalk from 2011-era ward boundaries to whichever
-   boundary Namma Yatri's data currently reports against — check this
-   directly against a fresh scrape before assuming it's the 369-ward GBA
-   structure.
+2. ~~Build the spatial crosswalk~~ — done:
+   `src/dispatch_eval/geo/crosswalk.py` (generic area-weighted
+   interpolation, tested) + `analysis/ward_crosswalk.py` (applies it to
+   Bengaluru's specific 2011-to-369-ward case, validates against the GBA's
+   official reallocation). For population/SC/ST, skip the interpolation
+   and use the GBA KML's own columns directly (see above).
 3. Report the crosswalk's own approximation error alongside the C5
-   results, not as a footnote.
+   results, not as a footnote — the measured numbers to cite are in
+   "Crosswalk results" above: ~0.05-0.3% at the citywide level, ~25-53%
+   median per-ward, depending on variable.
+4. **Still unverified**: which ward scheme Namma Yatri's actual open data
+   uses. Everything above assumes it's the current 369-ward GBA scheme
+   (the reasonable default, and what this crosswalk targets), but that
+   assumption should be checked directly against a fresh scrape before
+   C5's results are reported — if Namma Yatri turns out to still report
+   against an older scheme (243 or 225 wards), the target side of this
+   crosswalk needs to be rebuilt against that geometry instead.

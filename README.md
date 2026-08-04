@@ -107,6 +107,17 @@ src/dispatch_eval/
                               first), Kendall's tau to nominal, C1's
                               variance decomposition, the indifference set,
                               and the minimum-detectable-effect curve)
+  geo/
+    crosswalk.py               C5 prep, dev-time only (geopandas/shapely/
+                              pyproj are dev dependencies, not simulator
+                              runtime deps): generic area-weighted
+                              interpolation between administrative boundary
+                              eras, plus a validator that checks an
+                              interpolated column against an authoritative
+                              reference. Applied to Bengaluru's specific
+                              2011-to-369-ward reallocation in
+                              analysis/ward_crosswalk.py (see
+                              docs/census_bbmp_data.md).
 ```
 
 Design choices worth knowing about:
@@ -257,16 +268,36 @@ Design choices worth knowing about:
   bootstrap-over-input-models, CRN, and a ranking-flip/indifference-set
   report across dispatch policies for ride-hailing. No pivot triggered.
   Redo more rigorously before submitting anywhere.
-- **C5's data side checked** (not yet built): `docs/census_bbmp_data.md`.
-  Census 2011 ward-level demographics (population, SC/ST share, household
-  amenities) are real and downloadable via OpenCity/data.gov.in — but
-  Bengaluru's wards have been redrawn at least three times since 2011,
-  most recently by the September 2025 BBMP→Greater Bengaluru Authority
-  restructuring (198 → 243 → 225 → 369 wards). Joining this to Namma
-  Yatri's ward-level data needs a real GIS crosswalk between boundary
-  eras, not an ID match. SECC caste data was never released; Karnataka's
-  own 2015 caste survey isn't a stable public dataset yet; Census 2027
-  won't have usable tables for years.
+- **C5's ward-boundary crosswalk built and validated**:
+  `docs/census_bbmp_data.md`. Census 2011 ward-level demographics
+  (population, SC/ST share, household amenities) are real and downloadable
+  via OpenCity/data.gov.in, but Bengaluru's wards have been redrawn at
+  least three times since 2011 (198 → 243 → 225 → 369, the last by the
+  September 2025 BBMP→Greater Bengaluru Authority restructuring), so
+  joining this to Namma Yatri's ward-level data needs a real GIS crosswalk
+  between boundary eras, not an ID match. `src/dispatch_eval/geo/crosswalk.py`
+  is a generic, tested area-weighted-interpolation crosswalk
+  (`tests/test_crosswalk.py`); `analysis/ward_crosswalk.py` applies it to
+  the actual 2011→369-ward reallocation and validates it two ways: (1)
+  geometry coverage — the two boundary eras cover essentially the same
+  ground (717 km² current vs. 712 km² in 2011, 99.6% mean per-ward
+  overlap), so interpolation error isn't from missing source area; (2)
+  accuracy against the GBA's own official reallocation — the 2025
+  delimitation file already carries `TOT_P`/`SC_P`/`ST_P` re-tabulated
+  onto the new 369 wards, matching the 2011 Census citywide totals to
+  within 0.3%, so it's a real ground truth to check against, not another
+  guess. This project's own interpolation matches at the citywide level
+  but has substantial per-ward error (~24% median for population, worse
+  for the smaller SC/ST counts) — expected for area-weighting's
+  uniform-density assumption, and now measured rather than asserted.
+  **Practical upshot**: use the GBA file's own population/SC/ST columns
+  directly for C5, and reserve this project's interpolation (with its
+  measured error band) for the Census variables that have no official
+  reallocation (household amenities, literacy, worker categories — not
+  yet downloaded). SECC caste data was never released; Karnataka's own
+  2015 caste survey isn't a stable public dataset yet; Census 2027 won't
+  have usable tables for years. Still unverified: whether Namma Yatri's
+  actual data uses the 369-ward scheme this crosswalk targets.
 - **P4-P5** — not started.
 
 ### Fixed: the engine's shared RNG wasn't policy-independent
@@ -364,7 +395,7 @@ What that produced, once real Bengaluru anchors were used instead of NYC's:
 
 ```bash
 uv sync              # installs polars, numpy, scipy, pytest, ruff, networkx
-uv run pytest -q     # 70 tests: engine correctness, calibration recovery, adapters, B1-B5, tuning, CRN scenario, P3
+uv run pytest -q     # 78 tests: engine correctness, calibration recovery, adapters, B1-B5, tuning, CRN scenario, P3, ward crosswalk
 uv run ruff check .  # lint
 ```
 
@@ -410,8 +441,11 @@ df = generate_synthetic_trips(
    decision latency against a fixed dispatch-cycle budget, pure
    engineering, no trip data involved at all). Also unstarted and
    data-free: C6 (the coarsening ladder on our own synthetic data).
-8. **C5 needs the ward-boundary crosswalk built** before anything else —
-   see `docs/census_bbmp_data.md`. Get the current ward boundary shapefile
-   (BBMP/GBA GISViewer or Datameet/OpenBangalore), confirm which era Namma
-   Yatri's data actually reports against, then build the spatial
-   reallocation from 2011 wards onto it.
+8. **C5's crosswalk is built** (`src/dispatch_eval/geo/crosswalk.py`,
+   `analysis/ward_crosswalk.py` — see `docs/census_bbmp_data.md` for the
+   validated error numbers). What's left: confirm which ward era Namma
+   Yatri's actual data reports against (assumed 369-ward GBA — check
+   before trusting a join), download the literacy/worker-category/amenity
+   Census variables the GBA file doesn't carry (data.gov.in's Karnataka
+   PCA file) and run them through the same crosswalk, then actually wire
+   the result into a C5 join against real ward-level dispatch results.
