@@ -114,6 +114,13 @@ src/dispatch_eval/
                               fleet-size curve, plus Δdriver-hours (exact)
                               and Δ$/day (a documented flat-fare
                               approximation)
+  compute_parity.py             C4 — wall-clock dispatch()/reposition()
+                              latency as a function of open requests and
+                              idle vehicles, and which problem sizes fit a
+                              given real-time budget (measurement half
+                              only — see docs/compute_parity.md for why
+                              the "degrade + re-measure quality" half
+                              needs a mechanism this codebase doesn't have)
   geo/
     crosswalk.py               C5 prep, dev-time only (geopandas/shapely/
                               pyproj are dev dependencies, not simulator
@@ -320,10 +327,27 @@ Design choices worth knowing about:
   a simulated trip. Not yet run end-to-end against a real bootstrap study
   (only unit-tested with fake/small inputs) — that's one call away once
   P3 itself runs at real scale.
-- **P4 (C4, C5) partially done, P5 not started.** C5's crosswalk is built
-  (above). C4 (compute-parity frontier) is data-free and unstarted —
-  timing each policy's own decision latency against open-request/idle-
-  vehicle count, no trip data needed at all.
+- **C4 (compute parity) measurement half built**:
+  `src/dispatch_eval/compute_parity.py` (tested,
+  `tests/test_compute_parity.py`) + `analysis/compute_parity_sweep.py` —
+  see `docs/compute_parity.md`. Times every B0-B4 policy's `dispatch()`
+  (+ `reposition()` for B3/B4) at synthetic problem sizes from 10x10 to
+  600x600, no real data needed. Real result: every policy fits a
+  multi-second production cycle even at 600 simultaneous open
+  requests/idle vehicles; the expected O(n³) Hungarian-solver scaling is
+  visible in the trend (B1-B4 roughly cubic; B2-B4 run ~4x B0 at matched
+  size) but only crosses a tight 100ms budget at the most extreme size
+  tested. **The "degrade + re-measure quality" half is not built**: B1/B2's
+  `matching_radius_seconds` looked like the plan's "truncate the candidate
+  graph" lever but is actually cost-masking — the solved assignment matrix
+  is the same size regardless of radius (confirmed by spying on the exact
+  call, not inferred from timing —
+  `test_matching_radius_does_not_shrink_the_solved_cost_matrix`), so it
+  changes assignment quality, not latency. A real graph-truncation
+  mechanism (e.g. restricting each request to its k nearest vehicles
+  before the matrix is built) doesn't exist yet; that's the prerequisite
+  for the rest of C4.
+- **P4 (C3, C4, C5) built or partially built; P5 not started.**
 
 ### Fixed: the engine's shared RNG wasn't policy-independent
 
@@ -420,7 +444,7 @@ What that produced, once real Bengaluru anchors were used instead of NYC's:
 
 ```bash
 uv sync              # installs polars, numpy, scipy, pytest, ruff, networkx
-uv run pytest -q     # 88 tests: engine correctness, calibration recovery, adapters, B1-B5, tuning, CRN scenario, P3, ward crosswalk, decision currency
+uv run pytest -q     # 95 tests: engine correctness, calibration recovery, adapters, B1-B5, tuning, CRN scenario, P3, ward crosswalk, decision currency, compute parity
 uv run ruff check .  # lint
 ```
 
@@ -460,10 +484,11 @@ df = generate_synthetic_trips(
    and a Namma Yatri scrape, `DEFAULT_COLUMN_MAP` unverified against actual
    headers), and P1 validation against held-out real days.
 7. **C3 is built** (`decision_currency.py` — see above); not yet run
-   end-to-end against a real P3 study, only unit-tested. **C4 doesn't need
-   real data and hasn't been started**: compute-parity frontier — time
-   each policy's own decision latency against a fixed dispatch-cycle
-   budget, pure engineering, no trip data involved at all. Also unstarted
+   end-to-end against a real P3 study, only unit-tested. **C4's
+   measurement half is built** (`compute_parity.py`, `docs/compute_parity.md`);
+   its "degrade + re-measure quality" half needs an actual
+   candidate-graph-truncation mechanism that doesn't exist yet (see that
+   doc for why `matching_radius_seconds` doesn't qualify). Also unstarted
    and data-free: C6 (the coarsening ladder on our own synthetic data).
 8. **C5's crosswalk is built** (`src/dispatch_eval/geo/crosswalk.py`,
    `analysis/ward_crosswalk.py` — see `docs/census_bbmp_data.md` for the
