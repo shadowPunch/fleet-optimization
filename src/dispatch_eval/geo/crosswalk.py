@@ -76,6 +76,55 @@ def areal_interpolate(
     return pieces.groupby(target_id_col, as_index=False)[value_cols].sum()
 
 
+def areal_interpolate_weighted_average(
+    source: gpd.GeoDataFrame,
+    target: gpd.GeoDataFrame,
+    value_cols: list[str],
+    source_id_col: str,
+    target_id_col: str,
+    projected_crs: str = DEFAULT_PROJECTED_CRS,
+) -> pd.DataFrame:
+    """The correct counterpart to `areal_interpolate` for *intensive*
+    variables (rates, percentages, densities) rather than *extensive* ones
+    (counts like population, which are meaningful to sum).
+
+    Summing a percentage across the source wards a target ward overlaps
+    produces a meaningless number (two 50%-electrified wards would "sum"
+    to 100%). The correct treatment is an area-weighted **average**: each
+    target polygon's value is
+    `sum(source_value_i * intersection_area_i) / sum(intersection_area_i)`
+    over every source polygon `i` it overlaps — weighted by each piece's
+    share of the *target's own covered area*, not the source polygon's
+    area (`areal_interpolate`'s weighting, which is appropriate there
+    because it's conserving a total across reallocation, not averaging a
+    rate). Same uniform-density-within-a-source-polygon assumption and
+    same caveats as `areal_interpolate` — see this module's docstring.
+    """
+    if source.crs is None or target.crs is None:
+        raise ValueError("source and target GeoDataFrames must both have a CRS set")
+    if not value_cols:
+        raise ValueError("value_cols must be non-empty")
+
+    src = source[[source_id_col, *value_cols, "geometry"]].to_crs(projected_crs).copy()
+    tgt = target[[target_id_col, "geometry"]].to_crs(projected_crs).copy()
+
+    pieces = gpd.overlay(src, tgt, how="intersection", keep_geom_type=True)
+    pieces["_piece_area"] = pieces.geometry.area
+    if (pieces["_piece_area"] <= 0).any():
+        raise ValueError("overlay produced a zero- or negative-area piece")
+
+    for col in value_cols:
+        pieces[f"_weighted_{col}"] = pieces[col] * pieces["_piece_area"]
+
+    grouped = pieces.groupby(target_id_col, as_index=False).agg(
+        {**{f"_weighted_{col}": "sum" for col in value_cols}, "_piece_area": "sum"}
+    )
+    for col in value_cols:
+        grouped[col] = grouped[f"_weighted_{col}"] / grouped["_piece_area"]
+
+    return grouped[[target_id_col, *value_cols]]
+
+
 def interpolation_error(
     interpolated: pd.DataFrame,
     reference: pd.DataFrame,

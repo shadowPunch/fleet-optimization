@@ -5,7 +5,11 @@ import pandas as pd
 import pytest
 from shapely.geometry import box
 
-from dispatch_eval.geo.crosswalk import areal_interpolate, interpolation_error
+from dispatch_eval.geo.crosswalk import (
+    areal_interpolate,
+    areal_interpolate_weighted_average,
+    interpolation_error,
+)
 
 CRS = "EPSG:32643"
 
@@ -101,3 +105,62 @@ def test_interpolation_error_raises_when_no_ids_overlap():
     reference = pd.DataFrame({"new_ward": ["Z"], "official_pop": [150.0]})
     with pytest.raises(ValueError, match="no overlapping"):
         interpolation_error(interpolated, reference, "population", "official_pop", "new_ward")
+
+
+# --- areal_interpolate_weighted_average ----------------------------------------
+
+
+@pytest.fixture
+def source_rates() -> gpd.GeoDataFrame:
+    # Two adjacent 1x1 unit squares at different electrification rates.
+    return _gdf(
+        [
+            {"ward_id": "A", "electrified_pct": 80.0, "geometry": box(0, 0, 1, 1)},
+            {"ward_id": "B", "electrified_pct": 40.0, "geometry": box(1, 0, 2, 1)},
+        ]
+    )
+
+
+def test_weighted_average_is_area_weighted_not_summed(source_rates):
+    target = _gdf(
+        [
+            # straddles A/B evenly -> simple average of 80 and 40
+            {"new_ward": "X", "geometry": box(0.5, 0, 1.5, 1)},
+        ]
+    )
+    result = areal_interpolate_weighted_average(
+        source_rates, target, ["electrified_pct"], "ward_id", "new_ward"
+    )
+    assert result.set_index("new_ward").loc["X", "electrified_pct"] == pytest.approx(60.0)
+
+
+def test_weighted_average_matches_source_when_target_wholly_inside_one_source(source_rates):
+    target = _gdf([{"new_ward": "Y", "geometry": box(0, 0, 0.5, 1)}])  # fully inside A
+    result = areal_interpolate_weighted_average(
+        source_rates, target, ["electrified_pct"], "ward_id", "new_ward"
+    )
+    assert result.set_index("new_ward").loc["Y", "electrified_pct"] == pytest.approx(80.0)
+
+
+def test_weighted_average_weights_by_overlap_area_not_equal_split(source_rates):
+    # 3/4 of this target's area is over A (80%), 1/4 over B (40%):
+    # weighted average = 0.75*80 + 0.25*40 = 70, not the simple mean (60).
+    target = _gdf([{"new_ward": "Z", "geometry": box(0.25, 0, 1.25, 1)}])
+    result = areal_interpolate_weighted_average(
+        source_rates, target, ["electrified_pct"], "ward_id", "new_ward"
+    )
+    assert result.set_index("new_ward").loc["Z", "electrified_pct"] == pytest.approx(70.0)
+
+
+def test_weighted_average_requires_crs(source_rates):
+    target = gpd.GeoDataFrame([{"new_ward": "X", "geometry": box(0, 0, 1, 1)}])
+    with pytest.raises(ValueError, match="CRS"):
+        areal_interpolate_weighted_average(
+            source_rates, target, ["electrified_pct"], "ward_id", "new_ward"
+        )
+
+
+def test_weighted_average_requires_nonempty_value_cols(source_rates):
+    target = _gdf([{"new_ward": "X", "geometry": box(0, 0, 1, 1)}])
+    with pytest.raises(ValueError, match="value_cols"):
+        areal_interpolate_weighted_average(source_rates, target, [], "ward_id", "new_ward")

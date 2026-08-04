@@ -346,13 +346,30 @@ Design choices worth knowing about:
   for the smaller SC/ST counts) — expected for area-weighting's
   uniform-density assumption, and now measured rather than asserted.
   **Practical upshot**: use the GBA file's own population/SC/ST columns
-  directly for C5, and reserve this project's interpolation (with its
-  measured error band) for the Census variables that have no official
-  reallocation (household amenities, literacy, worker categories — not
-  yet downloaded). SECC caste data was never released; Karnataka's own
-  2015 caste survey isn't a stable public dataset yet; Census 2027 won't
-  have usable tables for years. Still unverified: whether Namma Yatri's
-  actual data uses the 369-ward scheme this crosswalk targets.
+  directly for C5, and reserve this project's interpolation for Census
+  variables that have no official reallocation.
+  **Household amenities are now crosswalked too**
+  (`analysis/ward_amenities_crosswalk.py`), using a *second* new
+  function — `areal_interpolate_weighted_average` — because these are
+  percentage/rate columns, not counts: summing two wards' "80%
+  electrified" and "40% electrified" is meaningless, so this weights by
+  overlap-area-averaged rather than overlap-area-summed. Along the way,
+  found that OpenCity's same-page "Household Assets" resource is actually
+  district/village-level despite its name (checked directly, not used),
+  while "Housing and Houselisting Data" genuinely is ward-level and does
+  carry electricity/water/vehicle-ownership/sanitation/housing-condition
+  rates. Citywide means hold up within a point after crosswalking, except
+  treated-water access (a 5.6-point shift — the one variable with real
+  spatial heterogeneity, flagged for a wider error bar than the rest).
+  Literacy/worker-participation rates are still not obtained: they're in
+  data.gov.in's Karnataka PCA file specifically, whose modern portal is a
+  client-side-rendered SPA that returned a 403 to `WebFetch` and an empty
+  shell to `curl` against a guessed API endpoint — a real, documented
+  access obstacle for scripted tools, not a cursory miss. SECC caste data
+  was never released; Karnataka's own 2015 caste survey isn't a stable
+  public dataset yet; Census 2027 won't have usable tables for years.
+  Still unverified: whether Namma Yatri's actual data uses the 369-ward
+  scheme this crosswalk targets.
 - **C3 (decision currency) built**: `src/dispatch_eval/decision_currency.py`
   (tested, `tests/test_decision_currency.py`). Sweeps a reference policy's
   fleet size to build a wait-time-vs-fleet curve (`build_fleet_wait_curve`),

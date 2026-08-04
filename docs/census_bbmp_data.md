@@ -158,9 +158,69 @@ in `analysis/cache/ward_crosswalk_validation.json` (gitignored — rerun
 `uv run python analysis/ward_crosswalk.py` to regenerate; requires the raw
 boundary/census files, not committed, links above).
 
+### Household amenities: a second crosswalk, a genuinely different kind
+
+`analysis/ward_amenities_crosswalk.py` extends this to household
+amenities, using OpenCity's **"Bengaluru Housing and Houselisting Data,
+Census 2011"** resource (same dataset page as the population CSV). Two
+real findings from building it, not assumed going in:
+
+1. **A same-page resource with a misleading name.** OpenCity also lists
+   "Household Assets - Bangalore, Census 2011," which sounds like the
+   obvious source for electricity/vehicle-ownership rates — checked
+   directly, and it's actually tabulated at **district/tehsil/village**
+   level (one row for "District - Bangalore," others for individual rural
+   villages like "Gopalapura"), not BBMP wards at all. Not usable for this
+   crosswalk; not used. The housing/houselisting file, by contrast, has a
+   real `Ward No` column and genuinely is ward-level — verified by
+   checking the actual data, not inferred from the resource's title.
+2. **Every column in the usable file is a percentage**, not a count
+   (`HH condition - total` = 100 for every ward). Population/SC/ST are
+   *extensive* quantities — summing fragments across a reallocation is
+   meaningful. A percentage is *intensive* — summing two wards' "80%
+   electrified" and "40% electrified" produces a meaningless 120%. This
+   needs an area-weighted **average**, not an area-weighted **sum**:
+   `geo.crosswalk.areal_interpolate_weighted_average`, a new sibling to
+   `areal_interpolate` (tested, `tests/test_crosswalk.py`), weighted by
+   each overlap's share of the *target* ward's covered area rather than
+   the source ward's own area.
+
+A third finding, smaller but worth flagging: this file's BBMP ward
+numbers run 1-209 (208 wards, gap at 201) — more than the population
+CSV's 198. The extra ~10 wards have no matching polygon in the 2011
+boundary geometry this crosswalk uses and are dropped, not guessed at
+(logged explicitly by the script: `dropping 10 wards with no 2011
+boundary geometry: [199, 200, 202, ..., 209]`). Plausibly these are areas
+added to BBMP between the original ~198-ward delimitation and whenever
+this housing file was compiled, still within the "2011 Census" vintage —
+not confirmed against an authoritative source, stated as an open question
+rather than resolved.
+
+Real result, a curated subset of amenity rates (electricity, treated tap
+water, two-wheeler/car ownership, latrine access, housing condition),
+citywide mean before vs. after interpolation:
+
+| Amenity | Source (198-ward) | Interpolated (369-ward) |
+|---|---|---|
+| Electrified | 98.4% | 98.3% |
+| Treated tap water | 76.3% | 70.7% |
+| Two-wheeler ownership | 47.1% | 46.3% |
+| Car/jeep ownership | 19.2% | 19.1% |
+| Latrine within premises | 96.7% | 96.6% |
+| Housing condition "good" | 79.2% | 79.0% |
+| Housing condition "dilapidated" | 1.1% | 1.1% |
+
+Most amenities barely move (≤0.8 points) — but treated-tap-water access
+shifts by 5.6 points, the one variable in this set with real spatial
+heterogeneity (electricity is near-universal at ~98% everywhere, leaving
+little room for an interpolation artifact to show up; water
+infrastructure genuinely varies block to block). Worth treating that
+specific variable's crosswalked numbers with more caution than the
+others, not applying one blanket error bar to all of them.
+
 ## What this actually gives C5
 
-With the crosswalk built, the Census 2011 extract supports:
+With both crosswalks built, the Census 2011 extract supports:
 
 - Total population and SC/ST population share per ward, at the current
   369-ward scheme, at official-reallocation accuracy (via the GBA KML's
@@ -168,15 +228,22 @@ With the crosswalk built, the Census 2011 extract supports:
   "race/income quantile" framing, though SC/ST status is not equivalent to
   the US race categories that framing was written around, and shouldn't be
   presented as if it were a direct analog.
-- Household amenities (electricity, piped water, vehicle ownership) as a
-  socioeconomic-status proxy, since Census doesn't publish household
-  income directly — via this project's own areal interpolation, at ~25%
-  typical per-ward error (measured above, not assumed).
-- Literacy rate and worker-participation rate as additional SES proxies,
-  same interpolation and same error band — not yet downloaded (they're in
-  the data.gov.in Karnataka PCA file, not the OpenCity ward CSV used so
-  far; extending `analysis/ward_crosswalk.py` to them is a follow-up, not
-  new methodology).
+- Household amenities (electricity, piped water, vehicle ownership,
+  latrine access, housing condition) as a socioeconomic-status proxy,
+  since Census doesn't publish household income directly — via the
+  weighted-average crosswalk above; citywide means hold up well except for
+  treated-water access, which should carry a wider error bar than the
+  rest.
+- Literacy rate and worker-participation rate as additional SES proxies
+  are **still not obtained** — they're in the data.gov.in Karnataka PCA
+  file specifically (not OpenCity, which was checked directly and doesn't
+  carry them), and that portal's modern interface is a client-side-rendered
+  SPA: `WebFetch` returned HTTP 403 on the catalog page, and `curl`
+  against both the page itself and a guessed CKAN-style API endpoint
+  returned only the SPA's empty HTML shell, no embedded data. A person
+  with a browser could very likely still get this file by navigating the
+  UI directly; scripted access specifically did not work in this
+  environment after a real attempt, not a cursory one.
 
 What it does **not** support: any caste breakdown finer than SC/ST, any
 income figure, or anything from 2025/2027 — the plan's C5 section should
@@ -186,17 +253,24 @@ a richer profile it can't actually get.
 ## Recommendation
 
 1. Use the OpenCity Census-2011 ward CSVs as the demographic source for C5.
-2. ~~Build the spatial crosswalk~~ — done:
-   `src/dispatch_eval/geo/crosswalk.py` (generic area-weighted
-   interpolation, tested) + `analysis/ward_crosswalk.py` (applies it to
-   Bengaluru's specific 2011-to-369-ward case, validates against the GBA's
-   official reallocation). For population/SC/ST, skip the interpolation
-   and use the GBA KML's own columns directly (see above).
+2. ~~Build the spatial crosswalk~~ — done, twice over:
+   `src/dispatch_eval/geo/crosswalk.py` has both `areal_interpolate`
+   (extensive/count variables — population, SC/ST) and
+   `areal_interpolate_weighted_average` (intensive/rate variables —
+   household amenities), each tested. `analysis/ward_crosswalk.py` and
+   `analysis/ward_amenities_crosswalk.py` apply them to Bengaluru's
+   specific 2011-to-369-ward case. For population/SC/ST, skip the
+   interpolation and use the GBA KML's own columns directly (see above).
 3. Report the crosswalk's own approximation error alongside the C5
    results, not as a footnote — the measured numbers to cite are in
    "Crosswalk results" above: ~0.05-0.3% at the citywide level, ~25-53%
-   median per-ward, depending on variable.
-4. **Still unverified**: which ward scheme Namma Yatri's actual open data
+   median per-ward for population/SC/ST; citywide amenity means generally
+   hold within a point except treated-water access (5.6-point shift,
+   flagged above as the one variable needing a wider error bar).
+4. **Still not obtained**: literacy and worker-participation rates
+   (data.gov.in's Karnataka PCA file specifically — a real, documented
+   access obstacle for scripted tools, not a cursory miss; see above).
+5. **Still unverified**: which ward scheme Namma Yatri's actual open data
    uses. Everything above assumes it's the current 369-ward GBA scheme
    (the reasonable default, and what this crosswalk targets), but that
    assumption should be checked directly against a fresh scrape before
