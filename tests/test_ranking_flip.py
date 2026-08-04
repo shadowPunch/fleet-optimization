@@ -17,6 +17,7 @@ from dispatch_eval.ranking_flip import (
     minimum_detectable_effect_curve,
     run_ranking_flip_experiment,
     subset_trips_by_days,
+    validate_mde_scaling,
     variance_decomposition,
 )
 from dispatch_eval.simulator.runner import StudyConfig
@@ -215,3 +216,36 @@ def test_mde_curve_at_fitted_days_matches_the_unscaled_standard_error():
 
     expected = norm.ppf(0.95) * np.sqrt(4.0 + 16.0)  # n == n_days_fitted: no rescaling
     assert curve[10] == pytest.approx(expected)
+
+
+def test_validate_mde_scaling_anchor_ratio_is_exactly_one_by_construction():
+    trips_df = generate_synthetic_trips(
+        n_days=6, zones=ZONES, start_date=datetime(2026, 1, 5), fleet_size=25, seed=4
+    )
+    config = StudyConfig(zones=ZONES, day_type="all", horizon_seconds=6 * 3600.0)
+    abandonment_model = AbandonmentModel(mean_patience_seconds=300.0)
+
+    result = validate_mde_scaling(
+        trips_df,
+        ZONES,
+        policy_a=NearestIdlePolicy(),
+        policy_b=BatchedHungarianPolicy(),
+        fleet_size=15,
+        abandonment_model=abandonment_model,
+        config=config,
+        candidate_n_days=[2, 4, 6],
+        n_bootstrap=3,
+        n_replications=2,
+        seed=21,
+    )
+
+    assert set(result.keys()) == {2, 4, 6}
+    anchor = result[6]  # largest n tested
+    assert anchor["ratio_measured_to_predicted"] == pytest.approx(1.0)
+    assert anchor["measured_across_theta_variance"] == pytest.approx(anchor["predicted_by_1_over_n"])
+
+    # predicted_by_1_over_n must strictly decrease as n grows (anchor_n/n shrinks)
+    predicted_values = [result[n]["predicted_by_1_over_n"] for n in (2, 4, 6)]
+    assert predicted_values == sorted(predicted_values, reverse=True)
+    for n in (2, 4, 6):
+        assert result[n]["measured_across_theta_variance"] >= 0.0

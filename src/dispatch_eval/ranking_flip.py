@@ -292,10 +292,10 @@ def subset_trips_by_days(
 ) -> pl.DataFrame:
     """The first `n_days` distinct calendar days of `df`, by `request_ts`.
 
-    A building block for empirically checking how estimation variance
-    shrinks with data volume — not currently wired into anything in this
-    module (see `minimum_detectable_effect_curve`'s docstring for why that
-    validation is a follow-up, not done here).
+    The building block `validate_mde_scaling` uses to empirically check how
+    estimation variance actually shrinks with data volume, instead of just
+    assuming the scaling `minimum_detectable_effect_curve` extrapolates
+    from.
     """
     dates = df[request_ts_col].dt.date().unique().sort()
     keep_dates = set(dates.head(n_days).to_list())
@@ -325,10 +325,9 @@ def minimum_detectable_effect_curve(
     constant, since it reflects replication-to-replication randomness, not
     how much data theta was fitted from.
 
-    That 1/n scaling is an assumption, not something measured here — a good
-    follow-up is re-running the full bootstrap at 2-3 real values of
-    `n_days` (see `subset_trips_by_days`) and checking the assumed line
-    against what actually comes out.
+    That 1/n scaling is an assumption, not something measured here — see
+    `validate_mde_scaling` for the empirical check against real data at
+    several values of `n_days`.
     """
     z = float(norm.ppf(confidence))  # one-sided: P(estimate has the correct sign) = confidence
     n_days_fitted = trips_df[request_ts_col].dt.date().n_unique()
@@ -341,3 +340,68 @@ def minimum_detectable_effect_curve(
         standard_error = np.sqrt(within + scaled_across)
         mde[n] = z * standard_error
     return mde
+
+
+def validate_mde_scaling(
+    trips_df: pl.DataFrame,
+    zones: list[str],
+    policy_a: DispatchPolicy,
+    policy_b: DispatchPolicy,
+    fleet_size: int,
+    abandonment_model: AbandonmentModel,
+    config: StudyConfig,
+    candidate_n_days: list[int],
+    n_bootstrap: int,
+    n_replications: int,
+    seed: int,
+) -> dict[int, dict[str, float]]:
+    """Empirically checks `minimum_detectable_effect_curve`'s 1/n_days
+    assumption for across-theta variance, instead of just asserting it.
+
+    For each `n` in `candidate_n_days` (ascending), subsets `trips_df` to
+    its first `n` calendar days (`subset_trips_by_days`) and re-runs the
+    full bootstrap-CRN experiment for exactly two policies, measuring
+    `variance_decomposition`'s `across_theta_variance` at that `n`. The
+    *largest* `n` tested is the anchor — the same direction
+    `minimum_detectable_effect_curve` itself extrapolates in, from more
+    data down to less — so every `n`'s prediction is
+    `variance(anchor_n) * (anchor_n / n)`, and `ratio_measured_to_predicted`
+    is exactly 1.0 at the anchor by construction, not evidence the
+    assumption holds; the real check is whether the smaller-`n` ratios stay
+    near 1.0 too.
+
+    This is `len(candidate_n_days)` full bootstrap experiments, not one —
+    genuinely more expensive than the extrapolation it's checking, which is
+    exactly why `minimum_detectable_effect_curve` doesn't do this itself by
+    default.
+    """
+    sorted_days = sorted(candidate_n_days)
+    anchor_n = sorted_days[-1]
+
+    measured: dict[int, float] = {}
+    for n in sorted_days:
+        subset = subset_trips_by_days(trips_df, n)
+        result = run_ranking_flip_experiment(
+            subset,
+            zones,
+            {"a": policy_a, "b": policy_b},
+            fleet_size,
+            abandonment_model,
+            config,
+            n_bootstrap,
+            n_replications,
+            seed,
+        )
+        decomp = variance_decomposition(result.metric_by_policy["a"], result.metric_by_policy["b"])
+        measured[n] = decomp["across_theta_variance"]
+
+    anchor_variance = measured[anchor_n]
+    out: dict[int, dict[str, float]] = {}
+    for n in sorted_days:
+        predicted = anchor_variance * (anchor_n / n)
+        out[n] = {
+            "measured_across_theta_variance": measured[n],
+            "predicted_by_1_over_n": predicted,
+            "ratio_measured_to_predicted": measured[n] / predicted if predicted > 0 else float("nan"),
+        }
+    return out

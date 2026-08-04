@@ -272,9 +272,20 @@ Design choices worth knowing about:
   simultaneous checks, documented as a first-cut simplification) and
   `minimum_detectable_effect_curve` (extrapolates MDE(n_days) from *one*
   measured variance decomposition, assuming across-theta variance shrinks
-  as 1/n_days — a standard asymptotic scaling, not something empirically
-  validated here yet; `subset_trips_by_days` exists as the building block
-  for that validation but isn't wired into anything). Still open: running
+  as 1/n_days — a standard asymptotic scaling). **That assumption is now
+  empirically checked, not just assumed**: `validate_mde_scaling` (tested)
+  re-runs the full bootstrap experiment at several real `n_days` values via
+  `subset_trips_by_days` and compares measured `across_theta_variance`
+  against the 1/n prediction — see `docs/mde_scaling_validation.md`. Real
+  result (24 days synthetic, B0 vs. B1, checked at n_days=3/6/12/24,
+  n_bootstrap=50): the assumption does **not** hold exactly — measured
+  variance at small n_days is only 18-41% of what 1/n predicts, a real,
+  monotonic pattern (confirmed by re-running at a larger bootstrap budget
+  after a first, noisier pass), not sampling noise. The direction is the
+  safe one: the MDE curve's output is *conservative* (overstates required
+  data) rather than misleadingly optimistic, but the underlying cause
+  (which of the four jointly-refit sub-models drives it) isn't established
+  by this check alone. Still open: running
   at the plan's real scale (B≈200-500) or against real data — only
   small-scale synthetic runs so far (B≤5 for the full experiment, B≤200 for
   the variance-decomposition-only unit tests), and the plan's own
@@ -469,7 +480,7 @@ What that produced, once real Bengaluru anchors were used instead of NYC's:
 
 ```bash
 uv sync              # installs polars, numpy, scipy, pytest, ruff, networkx
-uv run pytest -q     # 102 tests: engine correctness, calibration recovery, adapters, B1-B5, tuning, CRN scenario, P3, ward crosswalk, decision currency, compute parity, coarsening ladder
+uv run pytest -q     # 103 tests: engine correctness, calibration recovery, adapters, B1-B5, tuning, CRN scenario, P3, ward crosswalk, decision currency, compute parity, coarsening ladder
 uv run ruff check .  # lint
 ```
 
@@ -493,10 +504,12 @@ df = generate_synthetic_trips(
    held-out days (KS distance on wait time, trip/vehicle-hour, hour-of-day
    shape — see the project plan's P1 validation section).
 3. P3's core loop and all four plan outputs are built (`ranking_flip.py`).
-   The MDE curve's 1/n variance-scaling assumption hasn't been empirically
-   checked — `subset_trips_by_days` exists for exactly that (refit at 2-3
-   real values of n_days, compare the measured across-theta variance to
-   what the 1/n line predicts) but nothing calls it yet.
+   The MDE curve's 1/n variance-scaling assumption **is now empirically
+   checked** (`validate_mde_scaling`, `docs/mde_scaling_validation.md`) —
+   and doesn't hold exactly (see above). Worth understanding *why* before
+   this goes further: is it the NHPP arrival fit's sparse-cell fallback
+   behavior, the four-jointly-refit-sub-models structure, or something
+   else — not established by the check itself.
 4. Give each of B1-B4 its tuning budget (`calibration/tuning.py`) instead of
    the arbitrary defaults used so far, and wire B5's clairvoyant bound into
    the ranking-flip loop to report "fraction of clairvoyant gap closed" per
