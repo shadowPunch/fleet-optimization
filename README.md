@@ -107,6 +107,13 @@ src/dispatch_eval/
                               first), Kendall's tau to nominal, C1's
                               variance decomposition, the indifference set,
                               and the minimum-detectable-effect curve)
+  decision_currency.py          C3 — express a policy's per-draw wait-time
+                              gain (reusing ranking_flip's own bootstrap
+                              output, no extra simulation) as "worth N
+                              vehicles" relative to a reference policy's
+                              fleet-size curve, plus Δdriver-hours (exact)
+                              and Δ$/day (a documented flat-fare
+                              approximation)
   geo/
     crosswalk.py               C5 prep, dev-time only (geopandas/shapely/
                               pyproj are dev dependencies, not simulator
@@ -298,7 +305,25 @@ Design choices worth knowing about:
   2015 caste survey isn't a stable public dataset yet; Census 2027 won't
   have usable tables for years. Still unverified: whether Namma Yatri's
   actual data uses the 369-ward scheme this crosswalk targets.
-- **P4-P5** — not started.
+- **C3 (decision currency) built**: `src/dispatch_eval/decision_currency.py`
+  (tested, `tests/test_decision_currency.py`). Sweeps a reference policy's
+  fleet size to build a wait-time-vs-fleet curve (`build_fleet_wait_curve`),
+  then inverts it (`FleetWaitCurve.invert`, with linear extrapolation
+  outside the swept range, flagged per-draw rather than silently clipped)
+  to convert any policy's per-bootstrap-draw mean wait time — already
+  computed by C2's `ranking_flip.py`, reused at zero extra simulation
+  cost — into "worth N vehicles" relative to that reference, with a
+  bootstrap-percentile interval. Δdriver-hours is exact (vehicle-hours
+  scale linearly with fleet size in the engine); Δ$/day is a documented
+  approximation (flat fare-per-trip from input data × simulated
+  trips-per-vehicle-per-day), since the simulator never assigns a fare to
+  a simulated trip. Not yet run end-to-end against a real bootstrap study
+  (only unit-tested with fake/small inputs) — that's one call away once
+  P3 itself runs at real scale.
+- **P4 (C4, C5) partially done, P5 not started.** C5's crosswalk is built
+  (above). C4 (compute-parity frontier) is data-free and unstarted —
+  timing each policy's own decision latency against open-request/idle-
+  vehicle count, no trip data needed at all.
 
 ### Fixed: the engine's shared RNG wasn't policy-independent
 
@@ -395,7 +420,7 @@ What that produced, once real Bengaluru anchors were used instead of NYC's:
 
 ```bash
 uv sync              # installs polars, numpy, scipy, pytest, ruff, networkx
-uv run pytest -q     # 78 tests: engine correctness, calibration recovery, adapters, B1-B5, tuning, CRN scenario, P3, ward crosswalk
+uv run pytest -q     # 88 tests: engine correctness, calibration recovery, adapters, B1-B5, tuning, CRN scenario, P3, ward crosswalk, decision currency
 uv run ruff check .  # lint
 ```
 
@@ -434,13 +459,12 @@ df = generate_synthetic_trips(
 6. Still open from before: real Delhi NCR / Bengaluru data (a Kaggle token
    and a Namma Yatri scrape, `DEFAULT_COLUMN_MAP` unverified against actual
    headers), and P1 validation against held-out real days.
-7. **C3 and C4 don't need real data and haven't been started**: C3
-   (decision currency — sweep fleet size for the wait-time curve, invert
-   it, express policy deltas as "worth N vehicles" with propagated
-   uncertainty) and C4 (compute-parity frontier — time each policy's own
-   decision latency against a fixed dispatch-cycle budget, pure
-   engineering, no trip data involved at all). Also unstarted and
-   data-free: C6 (the coarsening ladder on our own synthetic data).
+7. **C3 is built** (`decision_currency.py` — see above); not yet run
+   end-to-end against a real P3 study, only unit-tested. **C4 doesn't need
+   real data and hasn't been started**: compute-parity frontier — time
+   each policy's own decision latency against a fixed dispatch-cycle
+   budget, pure engineering, no trip data involved at all. Also unstarted
+   and data-free: C6 (the coarsening ladder on our own synthetic data).
 8. **C5's crosswalk is built** (`src/dispatch_eval/geo/crosswalk.py`,
    `analysis/ward_crosswalk.py` — see `docs/census_bbmp_data.md` for the
    validated error numbers). What's left: confirm which ward era Namma
