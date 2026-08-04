@@ -510,10 +510,23 @@ df = generate_synthetic_trips(
    this goes further: is it the NHPP arrival fit's sparse-cell fallback
    behavior, the four-jointly-refit-sub-models structure, or something
    else — not established by the check itself.
-4. Give each of B1-B4 its tuning budget (`calibration/tuning.py`) instead of
-   the arbitrary defaults used so far, and wire B5's clairvoyant bound into
-   the ranking-flip loop to report "fraction of clairvoyant gap closed" per
-   policy per draw — neither done yet.
+4. **B1-B4 now each have a real tuning budget** instead of the arbitrary
+   fixed parameters used everywhere else so far —
+   `analysis/policy_tuning_run.py`, identical `n_evaluations=25` random
+   search per policy (the P2 parity condition), results cached at
+   `analysis/cache/policy_tuning_results.json`. Real numbers: B2
+   (value-corrected) tunes to the best mean wait of the four (170.8s);
+   B3 (fluid balancing, wraps B2 + repositioning) tunes to *worse* than
+   plain B2 (199.8s) under its own best-found parameters — an interesting
+   raw result, but **not a rigorous policy comparison**: each policy's
+   "best score" here comes from a single fixed evaluation seed (the
+   standard random-search-parity protocol, not a bootstrap-CRN paired
+   comparison), so it shouldn't be read as "B3 is worse than B2" the way
+   a real C2/P3 run would license. The natural next step is plugging
+   these tuned configurations into an actual `ranking_flip.py` bootstrap
+   experiment, which *is* built for exactly this comparison. Still open:
+   wire B5's clairvoyant bound into the ranking-flip loop to report
+   "fraction of clairvoyant gap closed" per policy per draw.
 5. Run P3 at something closer to the plan's real scale (B≈200-500) — only
    small (B≤5 for the full experiment) synthetic smoke runs so far. Watch
    whether B×R×|policies| actually needs the plan's metamodel-assisted
