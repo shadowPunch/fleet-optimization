@@ -536,7 +536,17 @@ committed settings:
 
 ```bash
 uv run python run_study.py --n-bootstrap 40 --n-replications 4   # ~4.5 min; writes results/study_results.parquet
+uv run python run_study.py --n-bootstrap 200 --n-replications 5  # ~26 min, the plan's target scale
 ```
+
+Run at both scales already (`docs/pre_registration.md` has the full
+comparison): the headline numbers barely move between B=40 and B=200 —
+same ranking, same indifference set, gap-closed fractions matching to two
+decimal places — which validates the pre-registered `n_bootstrap ≥ 40`
+minimum for *ranking* stability specifically. The variance decomposition
+itself (`input_uncertainty_ratio`) moved more between the two scales
+(0.314 → 0.239, same qualitative story), so report that one off the full
+200 draws, not 40.
 
 To generate a small synthetic dataset and poke at it interactively:
 

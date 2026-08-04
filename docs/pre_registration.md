@@ -94,6 +94,24 @@ range used for this repository's exploratory/development runs so far,
 which were sized for iteration speed, not for a publishable variance
 estimate.
 
+**Checked against the plan's own target scale, not just asserted**:
+`run_study.py` was run once at the pre-registered minimum
+(`--n-bootstrap 40 --n-replications 4`, 800 rows) and once at the plan's
+target (`--n-bootstrap 200 --n-replications 5`, 5000 rows,
+`results/study_results_at_scale.parquet`). The headline numbers barely
+moved between them — gap-closed fractions matched to two decimal places
+(e.g. B2: 1.233 at B=40 vs. 1.234 at B=200), same nominal ranking, same
+indifference set. **This validates the `n_bootstrap ≥ 40` minimum for
+*ranking stability* specifically** — P(ranked first) and the indifference
+set were already converged at 40 draws for this comparison. It does
+*not* extend that validation to fine-grained variance estimates: the
+`input_uncertainty_ratio` itself moved more (0.314 at B=40 → 0.239 at
+B=200, still directionally consistent — within-theta noise dominates
+either way) — consistent with `docs/mde_scaling_validation.md`'s own
+finding that variance-type statistics need more draws to stabilize than
+a ranking does. Report a ranking off 40 draws with reasonable confidence;
+report a variance decomposition off nothing less than the full 200.
+
 ## B5 clairvoyant gap-closed reporting
 
 `docs/coarsening_ladder.md` and `clairvoyant.py`'s own docstring document
