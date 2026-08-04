@@ -250,7 +250,24 @@ Design choices worth knowing about:
   "metamodel-assisted" fallback for when B×R×|policies| gets too expensive
   hasn't been needed (or built) at this scale. B5's clairvoyant bound also
   isn't wired into the loop yet for a "fraction of gap closed" metric.
-- **P0.1, P4-P5** — not started.
+- **P0.1** (novelty check) — done, provisional GO: `docs/p0_novelty_check.md`.
+  A web-search pass (not a full Scholar/WSC-archive traversal — see the
+  memo's own caveat) across the plan's five required strings plus the
+  named forward-citation sweep found no paper combining
+  bootstrap-over-input-models, CRN, and a ranking-flip/indifference-set
+  report across dispatch policies for ride-hailing. No pivot triggered.
+  Redo more rigorously before submitting anywhere.
+- **C5's data side checked** (not yet built): `docs/census_bbmp_data.md`.
+  Census 2011 ward-level demographics (population, SC/ST share, household
+  amenities) are real and downloadable via OpenCity/data.gov.in — but
+  Bengaluru's wards have been redrawn at least three times since 2011,
+  most recently by the September 2025 BBMP→Greater Bengaluru Authority
+  restructuring (198 → 243 → 225 → 369 wards). Joining this to Namma
+  Yatri's ward-level data needs a real GIS crosswalk between boundary
+  eras, not an ID match. SECC caste data was never released; Karnataka's
+  own 2015 caste survey isn't a stable public dataset yet; Census 2027
+  won't have usable tables for years.
+- **P4-P5** — not started.
 
 ### Fixed: the engine's shared RNG wasn't policy-independent
 
@@ -386,3 +403,15 @@ df = generate_synthetic_trips(
 6. Still open from before: real Delhi NCR / Bengaluru data (a Kaggle token
    and a Namma Yatri scrape, `DEFAULT_COLUMN_MAP` unverified against actual
    headers), and P1 validation against held-out real days.
+7. **C3 and C4 don't need real data and haven't been started**: C3
+   (decision currency — sweep fleet size for the wait-time curve, invert
+   it, express policy deltas as "worth N vehicles" with propagated
+   uncertainty) and C4 (compute-parity frontier — time each policy's own
+   decision latency against a fixed dispatch-cycle budget, pure
+   engineering, no trip data involved at all). Also unstarted and
+   data-free: C6 (the coarsening ladder on our own synthetic data).
+8. **C5 needs the ward-boundary crosswalk built** before anything else —
+   see `docs/census_bbmp_data.md`. Get the current ward boundary shapefile
+   (BBMP/GBA GISViewer or Datameet/OpenBangalore), confirm which era Namma
+   Yatri's data actually reports against, then build the spatial
+   reallocation from 2011 wards onto it.
