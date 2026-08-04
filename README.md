@@ -513,54 +513,30 @@ df = generate_synthetic_trips(
 4. **B1-B4 now each have a real tuning budget** instead of the arbitrary
    fixed parameters used everywhere else so far —
    `analysis/policy_tuning_run.py`, identical `n_evaluations=25` random
-   search per policy (the P2 parity condition), results cached at
-   `analysis/cache/policy_tuning_results.json`. Real numbers: B2
-   (value-corrected) tunes to the best mean wait of the four (170.8s);
-   B3 (fluid balancing, wraps B2 + repositioning) tunes to *worse* than
-   plain B2 (199.8s) under its own best-found parameters — an interesting
-   raw result, but **not a rigorous policy comparison**: each policy's
-   "best score" here comes from a single fixed evaluation seed (the
-   standard random-search-parity protocol, not a bootstrap-CRN paired
-   comparison), so it shouldn't be read as "B3 is worse than B2" the way
-   a real C2/P3 run would license. **That follow-up is now done**:
-   `analysis/tuned_ranking_flip_run.py` feeds the tuned configs into a
-   real `run_ranking_flip_experiment` (B=40, R=4). One real methodological
-   wrinkle surfaced building it: each policy was tuned with its *own*
-   `dispatch_interval_seconds` (Δ), but `run_ranking_flip_experiment`
-   needs one `StudyConfig` shared across every policy for CRN pairing to
-   mean anything — Δ is an engine parameter, not a policy one (per
-   `batched_hungarian.py`'s own docstring). The tuned Δ values split into
-   two clusters (B1/B4 ~5.8s, B2/B3 ~28-31s) with no free-lunch shared
-   choice, so this run just uses `StudyConfig`'s project-wide default
-   (5.0s) rather than quietly favor one policy's preference. **Real
-   result, rigorously**: B2 (value-corrected) wins every single bootstrap
-   draw (P(ranked first)=1.0) and is the *only* member of its own
-   indifference set at α=0.05 — every other policy is statistically
-   distinguishable from it, not just numerically behind it. That's a
-   clean, confident finding for this fleet size (30) and scenario, but it
-   also means **there's no close pair from this run to use for C6's
-   sharper follow-up** — the plan's own thesis expects indifference to
-   show up in *some* regime, so the natural next check was sweeping fleet
-   size (C3's own natural axis) looking for where the separation narrows.
-   **That sweep is now done too** (`analysis/fleet_size_sensitivity_run.py`,
-   fleet_size ∈ {15, 30, 60}, tight/baseline/generous, B=25 each, ~6 min):
-   B2 wins with P(ranked first)=1.0 and is alone in its own indifference
-   set **at all three sizes** — the separation is robust across a 4x
-   fleet-size range, not something that narrows at either extreme, for
-   this specific policy set and scenario. A genuine finding, not a null
-   one: it suggests this project's baseline ladder compares *mechanisms*
-   that differ enough (greedy vs. globally-optimal vs. value-corrected
-   assignment) to sit well outside indifference regardless of fleet size,
-   unlike the close, few-percent gaps the novelty check found reported in
-   the literature (P0.1: "82.3s vs. 85.3s vs. 85.8s" — variants of the
-   *same* algorithm, not different mechanisms). The most natural remaining
-   candidate for a genuinely close pair is **B3 vs. B4** specifically —
-   both wrap the same tuned B2 dispatch logic and differ only in
-   repositioning heuristic (fluid target allocation vs. sampled
-   lookahead), the closest methodological pair in the whole ladder — not
-   yet run. Still open: wire B5's clairvoyant bound into the ranking-flip
-   loop to report "fraction of clairvoyant gap closed" per policy per
-   draw.
+   search per policy (the P2 parity condition). Feeding those tuned
+   configs into real bootstrap-CRN comparisons
+   (`tuned_ranking_flip_run.py`, `fleet_size_sensitivity_run.py`,
+   `b3_vs_b4_run.py`) turned into a small research thread of its own —
+   **does this project's baseline ladder ever produce a genuine
+   indifference set?** Full write-up: `docs/indifference_search.md`.
+   Short version: no, not across four separate experiments (the full
+   ladder at three fleet sizes, and B3-vs-B4 head-to-head — the closest
+   methodological pair possible). Not a null result: it means this
+   ladder's *mechanisms* (greedy vs. globally-optimal vs.
+   value-function-corrected assignment) differ enough to sit outside
+   indifference regardless of fleet size, unlike the close few-percent
+   margins the literature typically reports between *variants of one*
+   algorithm (see P0.1's own finding: "82.3s vs. 85.3s vs. 85.8s"). One
+   real methodological wrinkle surfaced along the way, worth knowing
+   about if this gets reused: each policy was tuned with its own
+   `dispatch_interval_seconds`, but a CRN-paired comparison needs one
+   shared `StudyConfig` — Δ is an engine parameter, not a policy one — so
+   these runs use the project-wide default (5.0s) rather than favor one
+   policy's tuned preference. Not yet tried: a *within*-mechanism sweep
+   (e.g. B2 at several `value_weight` values against each other), the
+   natural next place a genuinely close pair might actually turn up.
+   Still open: wire B5's clairvoyant bound into the ranking-flip loop to
+   report "fraction of clairvoyant gap closed" per policy per draw.
 5. Run P3 at something closer to the plan's real scale (B≈200-500) — only
    small (B≤5 for the full experiment) synthetic smoke runs so far. Watch
    whether B×R×|policies| actually needs the plan's metamodel-assisted
