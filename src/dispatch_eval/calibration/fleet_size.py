@@ -22,6 +22,14 @@ class FleetSizeCalibrationResult:
     fleet_size: int
     loss: float
     candidates: dict[int, float]
+    hit_boundary: bool = False
+    """True when `fleet_size` is the smallest or largest value in
+    `candidate_fleet_sizes` — a plain grid search has no way to tell "the
+    true optimum is genuinely at this extreme" from "the true optimum is
+    outside the range tried at all," and silently returns the same result
+    either way. A `True` here means the candidate range should be widened
+    and recalibrated before trusting this fleet size, not treated as
+    converged."""
 
 
 def _loss(simulated_wait: np.ndarray, observed_median: float, observed_p90: float) -> float:
@@ -51,7 +59,10 @@ def calibrate_fleet_size(
         n: _loss(simulate_fn(n), observed_median, observed_p90) for n in candidate_fleet_sizes
     }
     best_n = min(losses, key=losses.get)
-    return FleetSizeCalibrationResult(fleet_size=best_n, loss=losses[best_n], candidates=losses)
+    hit_boundary = best_n == min(candidate_fleet_sizes) or best_n == max(candidate_fleet_sizes)
+    return FleetSizeCalibrationResult(
+        fleet_size=best_n, loss=losses[best_n], candidates=losses, hit_boundary=hit_boundary
+    )
 
 
 def ks_distance(observed: np.ndarray, simulated: np.ndarray) -> float:

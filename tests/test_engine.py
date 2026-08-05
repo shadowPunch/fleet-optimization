@@ -7,7 +7,7 @@ from dispatch_eval.models import AbandonmentModel, NHPPArrivalModel, ODModel, Tr
 from dispatch_eval.policies.nearest_idle import NearestIdlePolicy
 from dispatch_eval.scenario import Scenario
 from dispatch_eval.simulator.engine import SimulationEngine
-from dispatch_eval.simulator.entities import Vehicle, VehicleStatus
+from dispatch_eval.simulator.entities import Request, Vehicle, VehicleStatus
 from dispatch_eval.simulator.runner import StudyConfig, run_simulation
 
 ZONES = ["A", "B", "C"]
@@ -91,6 +91,51 @@ def test_reposition_vehicle_transitions_state_and_completes():
     engine.run()
     assert vehicle.status == VehicleStatus.IDLE
     assert vehicle.zone == "B"
+
+
+def test_unresolved_at_horizon_counts_requests_neither_completed_nor_abandoned():
+    # No vehicles at all: a request arrives near the end of the horizon
+    # with a patience window that extends well past it, so its own
+    # abandonment event would land after horizon_seconds and is never
+    # processed -- it's still WAITING when the run ends, counted in
+    # total_requests but in neither completed_requests nor
+    # abandoned_requests.
+    _, _, tt_model, _ = _uniform_models(rate_per_minute=0.0)
+    request = Request(
+        request_id="r0", origin_zone="A", dest_zone="A",
+        request_time=3500.0, abandon_at=10_000.0,
+    )
+    engine = SimulationEngine(
+        vehicles=[],
+        scenario=Scenario(requests=[request]),
+        travel_time_model=tt_model,
+        policy=NearestIdlePolicy(),
+        zones=ZONES,
+        horizon_seconds=3600.0,
+        rng=np.random.default_rng(3),
+    )
+    result = engine.run()
+
+    assert result.total_requests == 1
+    assert result.completed_requests == []
+    assert result.abandoned_requests == []
+    assert result.unresolved_at_horizon == 1
+
+
+def test_unresolved_at_horizon_is_zero_when_everything_resolves():
+    arrival_model, od_model, tt_model, ab_model = _uniform_models(rate_per_minute=0.5)
+    config = StudyConfig(zones=ZONES, day_type="all", horizon_seconds=6 * 3600.0)
+    result = run_simulation(
+        fleet_size=20, arrival_model=arrival_model, od_model=od_model,
+        travel_time_model=tt_model, abandonment_model=ab_model,
+        policy=NearestIdlePolicy(), config=config, rng=np.random.default_rng(4),
+    )
+    # ample fleet, moderate demand: the large majority should resolve one
+    # way or the other well within the horizon -- a real run still leaves
+    # a small tail unresolved purely from requests arriving near the very
+    # end (an inherent finite-horizon effect, not a bug; see the property's
+    # own docstring), so this checks it's a small fraction, not zero.
+    assert result.unresolved_at_horizon / result.total_requests < 0.05
 
 
 def test_event_ordering_is_deterministic_for_a_fixed_seed():

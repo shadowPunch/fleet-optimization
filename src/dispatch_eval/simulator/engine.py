@@ -48,6 +48,20 @@ class SimulationResult:
     def fraction_served(self) -> float:
         return len(self.completed_requests) / self.total_requests if self.total_requests else 0.0
 
+    @property
+    def unresolved_at_horizon(self) -> int:
+        """Requests that arrived (counted in `total_requests`) but were
+        still waiting/dispatched/in-trip when the horizon cut the run off
+        — neither completed nor abandoned, because their own completion or
+        abandonment event would have landed *after* `horizon_seconds` and
+        was never processed. An inherent finite-horizon boundary effect,
+        not a bug, but one that silently shrinks the effective sample
+        `fraction_served`/`mean_wait_seconds` are computed over if not
+        accounted for — requests arriving near the end of the horizon are
+        systematically more likely to land here than ones arriving early.
+        """
+        return self.total_requests - len(self.completed_requests) - len(self.abandoned_requests)
+
 
 class SimulationEngine:
     def __init__(

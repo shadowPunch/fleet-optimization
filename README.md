@@ -222,15 +222,16 @@ Design choices worth knowing about:
 
 ## Test coverage
 
-132 tests across 17 files, all in `tests/`, all passing as of the latest
+147 tests across 18 files, all in `tests/`, all passing as of the latest
 commit (`uv run pytest -q`). Every test is synthetic-data-only — nothing
 here depends on real Delhi NCR/Bengaluru/NYC files being present.
 
 | File | Count | Covers |
 |---|---|---|
-| `test_engine.py` | 7 | Event-loop correctness (internally consistent completed trips, undersupply → abandonment, repositioning state transitions, deterministic replay given a fixed seed), plus the `policy_travel_time_model` split: defaults to the true model, a distinct override actually reaches the policy, and realized trip durations track the *true* model even when the policy's belief is wildly wrong. |
+| `test_models.py` | 8 | Direct, focused proof that `generate_arrival_minutes` never produces an arrival outside its requested window (aligned/unaligned bin boundaries, a full day, a narrow sub-bin window, the zero-rate case) — part of the silent-exclusion audit. |
+| `test_engine.py` | 9 | Event-loop correctness (internally consistent completed trips, undersupply → abandonment, repositioning state transitions, deterministic replay given a fixed seed); the `policy_travel_time_model` split (defaults to the true model, a distinct override actually reaches the policy, realized durations track the *true* model even when the policy's belief is wrong); `unresolved_at_horizon` correctly counts requests neither completed nor abandoned when the horizon cuts a run off, and stays near zero under ample supply. |
 | `test_scenario.py` | 3 | The CRN fix — scenario generation is deterministic, order-independent, and a full-trace regression check. |
-| `test_calibration.py` | 8 | Every fitted model (arrival, OD, travel time, fare, fleet size) recovers known ground truth from synthetic data within tolerance. |
+| `test_calibration.py` | 13 | Every fitted model (arrival, OD, travel time, fare, fleet size) recovers known ground truth from synthetic data within tolerance; `arrival_sparsity_report`'s grid-coverage arithmetic; a direct proof the OD fit never assigns exactly zero probability to any zone; `calibrate_fleet_size`'s `hit_boundary` flag, both when the optimum is interior and when it's forced outside the candidate range. |
 | `test_tuning.py` | 4 | `random_search` recovers a known optimum, is reproducible given a seed, respects `minimize`, and improves on a deliberately bad fixed B1 configuration. |
 | `test_batched_hungarian.py` | 4 | B1 finds the globally optimal assignment (a case where greedy would provably do worse), radius-cutoff behavior. |
 | `test_value_function.py` | 3 | B2's value function: terminal boundary is zero, a busier zone gets a strictly lower cost-to-go, monotonic decay as the horizon closes. |
@@ -632,7 +633,7 @@ What that produced, once real Bengaluru anchors were used instead of NYC's:
 
 ```bash
 uv sync              # installs polars, numpy, scipy, pytest, ruff, networkx
-uv run pytest -q     # 132 tests, all synthetic-data-only — see "Test coverage" below for the file-by-file breakdown
+uv run pytest -q     # 147 tests, all synthetic-data-only — see "Test coverage" below for the file-by-file breakdown
 uv run ruff check .  # lint
 ```
 
@@ -682,6 +683,7 @@ Every `docs/*.md` file, what it's for, and its status:
 | `docs/mde_scaling_validation.md` | checked | Empirical check of the MDE curve's 1/n_days assumption — it doesn't hold exactly; the curve is conservative, not misleading. |
 | `docs/indifference_search.md` | found | Whether this project's own baseline ladder ever produces a real indifference set — not between mechanisms, but between close settings of one (B2's `value_weight`); cross-references the forecast-degradation result. |
 | `docs/forecast_degradation.md` | built, run (9 levels) | Whether B2-B4's advantage is an oracle-forecast artifact — checked and ruled out on every axis tried, including removing all spatial demand knowledge; what's still open instead. |
+| `docs/silent_exclusion_audit.md` | done | Four places checked for siblings of the B5 discretization bug — one real bug found and fixed (fleet-size calibration silently returning an unconverged boundary value), three others made measurable via new diagnostics. |
 
 ## Analysis scripts
 
