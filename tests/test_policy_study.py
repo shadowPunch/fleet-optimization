@@ -69,19 +69,30 @@ def test_long_table_has_one_row_per_cell():
                                   "mean_wait_seconds", "fraction_served"}
 
 
-def test_paired_vehicles_worth_cancels_reference_offset_and_flags_clipping():
-    from dispatch_eval.decision_currency import DecisionCurrencyResult
+def test_monotone_fleet_equivalent_never_extrapolates():
+    from dispatch_eval.decision_currency import FleetWaitCurve, monotone_fleet_equivalent
+
+    # Noisy flat tail: 221 then 222 must be treated as a 221 floor.
+    curve = FleetWaitCurve([1000, 2000, 3000, 4000], [300.0, 250.0, 221.0, 222.0])
+    assert monotone_fleet_equivalent(curve, 275.0) == (1500.0, 0)
+    assert monotone_fleet_equivalent(curve, 221.0) == (3000.0, 0)
+    assert monotone_fleet_equivalent(curve, 219.0) == (4000.0, 1)  # beats greedy's floor
+    assert monotone_fleet_equivalent(curve, 350.0) == (1000.0, -1)
+
+
+def test_paired_vehicles_worth_cancels_reference_offset_and_flags_lower_bounds():
+    from dispatch_eval.decision_currency import FleetWaitCurve
     from dispatch_eval.studies.policy_study import paired_vehicles_worth
 
-    def currency(name, worth):
-        return DecisionCurrencyResult(name, "greedy", 1000, np.array(worth, dtype=float),
-                                      np.zeros(len(worth), dtype=bool), 6.0, 20.0, 10.0)
-
-    result = paired_vehicles_worth(
-        {"greedy": currency("greedy", [50, 60]), "fast": currency("fast", [250, 900])},
-        "greedy", curve_max=1500,
+    curve = FleetWaitCurve([1000, 2000, 3000], [300.0, 250.0, 200.0])
+    result = RankingFlipResult(
+        policy_names=["greedy", "fast"],
+        metric_by_policy={"greedy": np.array([[300.0], [280.0]]),
+                          "fast": np.array([[250.0], [150.0]])},
+        rankings=np.array([[1, 0], [1, 0]]), nominal_ranking=["fast", "greedy"],
     )
-    assert result["greedy"]["vehicles_worth_mean"] == 0.0
-    # draw 0: 1250 - 1050 = 200; draw 1: clipped 1500 - 1060 = 440
-    assert result["fast"]["vehicles_worth_mean"] == pytest.approx(320.0)
-    assert result["fast"]["fraction_draws_lower_bound"] == 0.5
+    worth = paired_vehicles_worth(result, curve, horizon_hours=6.0)
+    assert worth["greedy"]["vehicles_worth_mean"] == 0.0
+    # draw 0: 2000 - 1000; draw 1: floor beaten -> 3000 (lower bound) - 1400
+    assert worth["fast"]["vehicles_worth_mean"] == pytest.approx((1000 + 1600) / 2)
+    assert worth["fast"]["fraction_draws_lower_bound"] == 0.5

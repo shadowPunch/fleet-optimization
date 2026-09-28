@@ -77,6 +77,35 @@ class FleetWaitCurve:
         return float(np.interp(target_wait_seconds, waits, sizes)), False
 
 
+def monotone_fleet_equivalent(curve: FleetWaitCurve, target_wait_seconds: float) -> tuple[float, int]:
+    """Smallest fleet at which `curve`'s policy reaches `target_wait_seconds`.
+
+    Unlike `FleetWaitCurve.invert`, never extrapolates: the curve is first
+    made non-increasing in fleet size (a running minimum, removing
+    replication noise on its flat tail), then inverted by linear
+    interpolation. Returns `(fleet, side)`:
+
+    - side 0: the target lies within the curve.
+    - side +1: the target beats the curve's best wait at every swept
+      fleet; `fleet` is the largest swept size, a lower bound.
+    - side -1: the target is worse than the curve at its smallest fleet;
+      `fleet` is the smallest swept size, an upper bound.
+    """
+    order = np.argsort(curve.fleet_sizes)
+    sizes = np.asarray(curve.fleet_sizes, dtype=float)[order]
+    waits = np.minimum.accumulate(np.asarray(curve.mean_wait_seconds, dtype=float)[order])
+    if target_wait_seconds < waits[-1]:
+        return float(sizes[-1]), 1
+    if target_wait_seconds > waits[0]:
+        return float(sizes[0]), -1
+    i = int(np.argmax(waits <= target_wait_seconds))
+    if i == 0:
+        return float(sizes[0]), 0
+    drop = waits[i - 1] - waits[i]
+    frac = (waits[i - 1] - target_wait_seconds) / drop if drop > 0 else 1.0
+    return float(sizes[i - 1] + frac * (sizes[i] - sizes[i - 1])), 0
+
+
 def build_fleet_wait_curve(
     fleet_sizes: list[int],
     models: FittedModels,

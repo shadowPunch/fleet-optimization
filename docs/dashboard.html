@@ -1,0 +1,435 @@
+<title>Manhattan Dispatch Twin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@85,500;85,700;100,600&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+:root {
+  --bg: #f5f6f4;
+  --panel: #fbfcfa;
+  --ink: #15181a;
+  --muted: #596066;
+  --faint: #8a9095;
+  --rule: #dde0dc;
+  --grid: #e7e9e5;
+  --baseline: #8a8984;
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100;
+  --band: #cde2fb;
+  --good: #0ca30c; --critical: #d03b3b;
+  --display: "Archivo", "Arial Narrow", system-ui, sans-serif;
+  --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #131516; --panel: #1a1c1d; --ink: #eceeed; --muted: #a6acb0; --faint: #7d8388;
+    --rule: #2c3032; --grid: #25292b; --baseline: #8e8d88;
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --band: #1c3a5e;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #131516; --panel: #1a1c1d; --ink: #eceeed; --muted: #a6acb0; --faint: #7d8388;
+  --rule: #2c3032; --grid: #25292b; --baseline: #8e8d88;
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --band: #1c3a5e;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font: 15px/1.6 var(--body); }
+.page { max-width: 1040px; margin: 0 auto; padding-inline: 20px; padding-block: 40px 64px; display: grid; gap: 56px; }
+h1, h2, h3 { font-family: var(--display); text-wrap: balance; margin: 0; }
+h1 { font-size: clamp(30px, 5vw, 46px); font-stretch: 85%; font-weight: 700; line-height: 1.05; letter-spacing: -0.01em; }
+h2 { font-size: 24px; font-stretch: 85%; font-weight: 700; }
+h3 { font-size: 15px; font-weight: 600; font-stretch: 100%; }
+p { margin: 0; max-width: 68ch; }
+.eyebrow { font: 500 12px/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.lede { color: var(--muted); font-size: 17px; }
+header { display: grid; gap: 16px; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1px; background: var(--rule); border: 1px solid var(--rule); }
+.stat { background: var(--panel); padding: 14px 16px; display: grid; gap: 4px; align-content: start; }
+.stat b { font: 500 26px/1.1 var(--mono); font-variant-numeric: tabular-nums; }
+.stat span { color: var(--muted); font-size: 13px; line-height: 1.4; }
+.pass { color: var(--good); font: 600 12px var(--mono); letter-spacing: 0.04em; }
+section { display: grid; gap: 20px; }
+.section-head { display: grid; gap: 8px; border-top: 2px solid var(--ink); padding-top: 14px; }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 28px; }
+figure { margin: 0; display: grid; gap: 8px; min-width: 0; }
+figcaption { color: var(--muted); font-size: 13px; }
+.chart { position: relative; width: 100%; }
+.chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.chart text { fill: var(--muted); font: 11px var(--mono); }
+.chart .strong { fill: var(--ink); }
+.tip { position: absolute; pointer-events: none; background: var(--ink); color: var(--bg); font: 12px/1.45 var(--mono); padding: 6px 9px; border-radius: 4px; white-space: nowrap; transform: translate(-50%, calc(-100% - 10px)); z-index: 2; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13px; color: var(--muted); }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
+.controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.seg { display: inline-flex; border: 1px solid var(--rule); border-radius: 6px; overflow: hidden; background: var(--panel); flex-wrap: wrap; }
+.seg button { font: 500 13px var(--body); color: var(--muted); background: none; border: 0; padding: 7px 14px; cursor: pointer; }
+.seg button + button { border-left: 1px solid var(--rule); }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
+.seg button:focus-visible, .toggle:focus-visible { outline: 2px solid var(--s1); outline-offset: 2px; }
+.regime-note { color: var(--muted); font-size: 13px; }
+.table-wrap { overflow-x: auto; border: 1px solid var(--rule); background: var(--panel); }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { padding: 8px 12px; text-align: right; border-bottom: 1px solid var(--rule); white-space: nowrap; }
+th { font: 500 11px var(--mono); letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); }
+th:first-child, td:first-child { text-align: left; }
+td { font-variant-numeric: tabular-nums; }
+td.num { font-family: var(--mono); }
+tr:last-child td { border-bottom: 0; }
+.chip { display: inline-block; font: 500 11px var(--mono); padding: 1px 7px; border-radius: 99px; border: 1px solid currentColor; }
+.chip.best { color: var(--good); }
+.dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 8px; }
+.toggle { font: 500 12px var(--mono); color: var(--muted); background: none; border: 1px solid var(--rule); border-radius: 4px; padding: 4px 9px; cursor: pointer; justify-self: start; }
+.notes { display: grid; gap: 10px; color: var(--muted); font-size: 14px; }
+.notes b { color: var(--ink); font-weight: 600; }
+footer { color: var(--faint); font-size: 12px; border-top: 1px solid var(--rule); padding-top: 14px; }
+@media (prefers-reduced-motion: no-preference) { .seg button { transition: background .15s, color .15s; } }
+</style>
+
+<div class="page">
+  <header>
+    <div class="eyebrow">NYC TLC · HV0003 · Manhattan · Jan 2024 weekdays · 12:00–18:00</div>
+    <h1>Which dispatch algorithm should Manhattan run, and how sure can we be?</h1>
+    <p class="lede">A zone-level digital twin of Uber's Manhattan market, validated against held-out days of real trips, used to compare five dispatch algorithms under bootstrap uncertainty in every input model.</p>
+    <div class="stats" id="stats"></div>
+  </header>
+
+  <section id="data">
+    <div class="section-head">
+      <div class="eyebrow">1 · The real data</div>
+      <h2>Demand climbs toward the evening peak, and so do waits</h2>
+      <p class="lede" id="data-lede"></p>
+    </div>
+    <div class="grid2">
+      <figure>
+        <h3>Requests per 15 minutes</h3>
+        <div class="chart" id="demand-chart"></div>
+        <figcaption>Line: mean across the 14 weekdays. Band: the quietest and busiest day in each slot.</figcaption>
+      </figure>
+      <figure>
+        <h3>Mean wait by hour, split into its two parts</h3>
+        <div class="legend"><span><i style="background:var(--s1)"></i>Driver approach</span><span><i style="background:var(--s2)"></i>Rider boarding</span></div>
+        <div class="chart" id="components-chart"></div>
+        <figcaption>NYC records when the driver arrived on scene, so the wait splits into approach and boarding.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section id="validation">
+    <div class="section-head">
+      <div class="eyebrow">2 · Validation</div>
+      <h2>The twin reproduces waits on days it never saw</h2>
+      <p class="lede" id="validation-lede"></p>
+    </div>
+    <div class="grid2">
+      <figure>
+        <h3>Wait quantiles: real held-out days vs simulated</h3>
+        <div class="legend"><span><i style="background:var(--s1)"></i>Real (held-out)</span><span><i style="background:var(--s2)"></i>Simulated twin</span></div>
+        <div class="chart" id="quantile-chart"></div>
+      </figure>
+      <figure>
+        <h3>Supply calibration: KS distance by fleet size and same-zone pickup time</h3>
+        <div class="chart" id="grid-chart"></div>
+        <figcaption>Darker is a closer fit to the calibration days; outlined cells are within the 0.10 threshold. Every fleet of 4,000 or more fits, so wait data sets a floor on supply but not a ceiling.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section id="study">
+    <div class="section-head">
+      <div class="eyebrow">3 · Policy study</div>
+      <h2>How much each algorithm cuts waits, by how many drivers are on the road</h2>
+      <p class="lede">Each policy is tuned with the same search budget and must serve at least as many riders as greedy dispatch. Intervals are 95% bootstrap intervals: trips resampled, every input model refitted, all policies run on identical request streams.</p>
+    </div>
+    <div class="controls">
+      <div class="seg" id="regime-seg" role="group" aria-label="Supply regime"></div>
+      <span class="regime-note" id="regime-note"></span>
+    </div>
+    <figure>
+      <h3>Wait reduction vs greedy dispatch</h3>
+      <div class="chart" id="gain-chart"></div>
+    </figure>
+    <div class="table-wrap"><table id="policy-table"></table></div>
+    <figure>
+      <h3>Wait reduction (%) across every supply regime</h3>
+      <div class="table-wrap"><table id="regime-table"></table></div>
+      <figcaption>Fleet size is the one input the data cannot pin down, so the comparison spans the range it allows, plus a driver shortage below it.</figcaption>
+    </figure>
+  </section>
+
+  <section id="method">
+    <div class="section-head">
+      <div class="eyebrow">4 · How it works</div>
+      <h2>Method in brief</h2>
+    </div>
+    <div class="notes" id="notes"></div>
+  </section>
+
+  <footer id="footer"></footer>
+</div>
+
+<script>
+const DATA = {"generated": "2026-09-29", "labels": {"greedy": "Greedy nearest-vehicle", "batched": "Batched matching", "value_aware": "Value-aware matching", "fluid_rebalance": "Value-aware + fluid rebalancing", "lookahead_rebalance": "Value-aware + lookahead rebalancing"}, "policy_order": ["greedy", "batched", "value_aware", "fluid_rebalance", "lookahead_rebalance"], "regime_order": ["shortage", "tight", "mid", "abundant"], "eda": {"summary": {"trips": 556297, "days": 14, "zones": 69, "trips_per_day": 39735.5, "median_wait_s": 181.0, "p90_wait_s": 358.0, "median_approach_s": 117.0, "median_boarding_s": 45.0, "median_trip_s": 850.0, "same_zone_trip_share": 0.046775373586411574, "peak_busy_vehicles": 3079.533253968254}, "demand": [{"slot": "12:00", "mean": 1396.642857142857, "min": 1027, "max": 1806}, {"slot": "12:15", "mean": 1378.857142857143, "min": 1091, "max": 1764}, {"slot": "12:30", "mean": 1412.0714285714287, "min": 1080, "max": 1820}, {"slot": "12:45", "mean": 1330.0714285714287, "min": 989, "max": 1757}, {"slot": "13:00", "mean": 1341.5714285714287, "min": 1031, "max": 1733}, {"slot": "13:15", "mean": 1349.5, "min": 1042, "max": 1753}, {"slot": "13:30", "mean": 1454.7142857142858, "min": 1068, "max": 1975}, {"slot": "13:45", "mean": 1410.857142857143, "min": 1040, "max": 1793}, {"slot": "14:00", "mean": 1466.5, "min": 1094, "max": 1899}, {"slot": "14:15", "mean": 1483.857142857143, "min": 1092, "max": 1922}, {"slot": "14:30", "mean": 1564.2857142857142, "min": 1166, "max": 2006}, {"slot": "14:45", "mean": 1549.0, "min": 1128, "max": 2004}, {"slot": "15:00", "mean": 1595.7142857142858, "min": 1113, "max": 2065}, {"slot": "15:15", "mean": 1549.642857142857, "min": 1035, "max": 2036}, {"slot": "15:30", "mean": 1649.357142857143, "min": 1155, "max": 2290}, {"slot": "15:45", "mean": 1615.5714285714287, "min": 1161, "max": 2087}, {"slot": "16:00", "mean": 1682.9285714285713, "min": 1229, "max": 2195}, {"slot": "16:15", "mean": 1618.9285714285713, "min": 1119, "max": 2065}, {"slot": "16:30", "mean": 1827.642857142857, "min": 1250, "max": 2589}, {"slot": "16:45", "mean": 1919.0714285714287, "min": 1291, "max": 2612}, {"slot": "17:00", "mean": 2193.9285714285716, "min": 1412, "max": 3018}, {"slot": "17:15", "mean": 2182.3571428571427, "min": 1352, "max": 2903}, {"slot": "17:30", "mean": 2373.4285714285716, "min": 1429, "max": 3115}, {"slot": "17:45", "mean": 2389.0, "min": 1443, "max": 3044}], "components": [{"hour": 12, "trips": 77247, "wait": 191.91547891827514, "approach": 127.61906611259984, "boarding": 64.2964128056753}, {"hour": 13, "trips": 77793, "wait": 190.1597573046418, "approach": 126.34688211021557, "boarding": 63.81287519442623}, {"hour": 14, "trips": 84891, "wait": 198.2773085486094, "approach": 136.02079136775393, "boarding": 62.25651718085545}, {"hour": 15, "trips": 89744, "wait": 205.65353672668925, "approach": 145.02887101087538, "boarding": 60.62466571581387}, {"hour": 16, "trips": 98680, "wait": 208.94415281718688, "approach": 147.01078232671262, "boarding": 61.93337049047426}, {"hour": 17, "trips": 127942, "wait": 239.13640555876881, "approach": 177.26864516734145, "boarding": 61.86776039142737}]}, "validation": {"wait_ks_distance": 0.030825169002415304, "hour_of_day_cosine": 0.9861701334924279, "quantiles": [{"quantile": 0.1, "held_out_wait": 92.0, "simulated_wait": 87.13390733666074, "held_out_approach": 36.0, "simulated_approach": 53.02686251209229}, {"quantile": 0.25, "held_out_wait": 133.0, "simulated_wait": 127.86171109241491, "held_out_approach": 70.0, "simulated_approach": 78.82794010962061}, {"quantile": 0.5, "held_out_wait": 187.0, "simulated_wait": 188.50054209150358, "held_out_approach": 123.0, "simulated_approach": 123.03494668554595}, {"quantile": 0.75, "held_out_wait": 264.0, "simulated_wait": 267.6643062730533, "held_out_approach": 201.0, "simulated_approach": 193.96242100281188}, {"quantile": 0.9, "held_out_wait": 367.0, "simulated_wait": 378.89293855044343, "held_out_approach": 305.6000000000058, "simulated_approach": 295.34461650873163}], "grid": [{"fleet_size": 1500, "intra_zone_median_seconds": 45, "ks_distance": 0.8222419831759051, "simulated_median_wait": 957.6785826690884}, {"fleet_size": 1500, "intra_zone_median_seconds": 60, "ks_distance": 0.827100310957436, "simulated_median_wait": 957.9909522083908}, {"fleet_size": 1500, "intra_zone_median_seconds": 90, "ks_distance": 0.8325885331201265, "simulated_median_wait": 961.2318545788639}, {"fleet_size": 1500, "intra_zone_median_seconds": 120, "ks_distance": 0.8435088025252111, "simulated_median_wait": 967.8782893364996}, {"fleet_size": 1500, "intra_zone_median_seconds": 150, "ks_distance": 0.8530848985849638, "simulated_median_wait": 969.3611794166625}, {"fleet_size": 1500, "intra_zone_median_seconds": 180, "ks_distance": 0.8626400849254021, "simulated_median_wait": 969.8451391369299}, {"fleet_size": 1500, "intra_zone_median_seconds": 240, "ks_distance": 0.8768402570738698, "simulated_median_wait": 975.8829088757548}, {"fleet_size": 1500, "intra_zone_median_seconds": 300, "ks_distance": 0.8911382637695713, "simulated_median_wait": 984.7105453438267}, {"fleet_size": 2000, "intra_zone_median_seconds": 45, "ks_distance": 0.7403124865193811, "simulated_median_wait": 797.4249390632212}, {"fleet_size": 2000, "intra_zone_median_seconds": 60, "ks_distance": 0.7377096381538869, "simulated_median_wait": 792.5028418553593}, {"fleet_size": 2000, "intra_zone_median_seconds": 90, "ks_distance": 0.75990848477978, "simulated_median_wait": 812.9985050837158}, {"fleet_size": 2000, "intra_zone_median_seconds": 120, "ks_distance": 0.7725591582646372, "simulated_median_wait": 813.0391236410669}, {"fleet_size": 2000, "intra_zone_median_seconds": 150, "ks_distance": 0.7919807699292669, "simulated_median_wait": 829.2251221614679}, {"fleet_size": 2000, "intra_zone_median_seconds": 180, "ks_distance": 0.8085488723451648, "simulated_median_wait": 835.7415928519272}, {"fleet_size": 2000, "intra_zone_median_seconds": 240, "ks_distance": 0.8326786687095821, "simulated_median_wait": 846.0913312974862}, {"fleet_size": 2000, "intra_zone_median_seconds": 300, "ks_distance": 0.8542677405081254, "simulated_median_wait": 861.3939878792662}, {"fleet_size": 2500, "intra_zone_median_seconds": 45, "ks_distance": 0.4717257671517559, "simulated_median_wait": 461.1840336237219}, {"fleet_size": 2500, "intra_zone_median_seconds": 60, "ks_distance": 0.48590703795774576, "simulated_median_wait": 479.4589180557841}, {"fleet_size": 2500, "intra_zone_median_seconds": 90, "ks_distance": 0.5105927359633458, "simulated_median_wait": 503.1795876201138}, {"fleet_size": 2500, "intra_zone_median_seconds": 120, "ks_distance": 0.5419371739702616, "simulated_median_wait": 528.2801584962308}, {"fleet_size": 2500, "intra_zone_median_seconds": 150, "ks_distance": 0.5755522892230434, "simulated_median_wait": 546.5025827428876}, {"fleet_size": 2500, "intra_zone_median_seconds": 180, "ks_distance": 0.6177249707276786, "simulated_median_wait": 571.3608600430175}, {"fleet_size": 2500, "intra_zone_median_seconds": 240, "ks_distance": 0.687300015836527, "simulated_median_wait": 618.3874222828217}, {"fleet_size": 2500, "intra_zone_median_seconds": 300, "ks_distance": 0.7397838417230753, "simulated_median_wait": 649.4249559465932}, {"fleet_size": 3000, "intra_zone_median_seconds": 45, "ks_distance": 0.2016597659985706, "simulated_median_wait": 152.93242387656983}, {"fleet_size": 3000, "intra_zone_median_seconds": 60, "ks_distance": 0.2053508296123615, "simulated_median_wait": 170.98531425838792}, {"fleet_size": 3000, "intra_zone_median_seconds": 90, "ks_distance": 0.24252045731006644, "simulated_median_wait": 218.5651059773145}, {"fleet_size": 3000, "intra_zone_median_seconds": 120, "ks_distance": 0.29217502640582294, "simulated_median_wait": 265.02122537915784}, {"fleet_size": 3000, "intra_zone_median_seconds": 150, "ks_distance": 0.3713708092325673, "simulated_median_wait": 318.09885769844914}, {"fleet_size": 3000, "intra_zone_median_seconds": 180, "ks_distance": 0.4261156805015823, "simulated_median_wait": 350.89520277334486}, {"fleet_size": 3000, "intra_zone_median_seconds": 240, "ks_distance": 0.5361200744754457, "simulated_median_wait": 421.30849905029703}, {"fleet_size": 3000, "intra_zone_median_seconds": 300, "ks_distance": 0.6295963904762205, "simulated_median_wait": 480.0574260569956}, {"fleet_size": 3500, "intra_zone_median_seconds": 45, "ks_distance": 0.2404121415152788, "simulated_median_wait": 131.64674470388218}, {"fleet_size": 3500, "intra_zone_median_seconds": 60, "ks_distance": 0.16350956053043159, "simulated_median_wait": 149.13429240409369}, {"fleet_size": 3500, "intra_zone_median_seconds": 90, "ks_distance": 0.12962901751900502, "simulated_median_wait": 185.47170851691408}, {"fleet_size": 3500, "intra_zone_median_seconds": 120, "ks_distance": 0.19167212527521804, "simulated_median_wait": 223.32055222015333}, {"fleet_size": 3500, "intra_zone_median_seconds": 150, "ks_distance": 0.2815400230392717, "simulated_median_wait": 264.9633099836674}, {"fleet_size": 3500, "intra_zone_median_seconds": 180, "ks_distance": 0.3639674725606365, "simulated_median_wait": 304.07521987578093}, {"fleet_size": 3500, "intra_zone_median_seconds": 240, "ks_distance": 0.49467559865068833, "simulated_median_wait": 377.86389969115044}, {"fleet_size": 3500, "intra_zone_median_seconds": 300, "ks_distance": 0.5985276120764034, "simulated_median_wait": 442.1499070558307}, {"fleet_size": 4000, "intra_zone_median_seconds": 45, "ks_distance": 0.28545891812900026, "simulated_median_wait": 118.81045374895984}, {"fleet_size": 4000, "intra_zone_median_seconds": 60, "ks_distance": 0.20370301848906355, "simulated_median_wait": 138.84496307450536}, {"fleet_size": 4000, "intra_zone_median_seconds": 90, "ks_distance": 0.06832095506355798, "simulated_median_wait": 172.28609807637986}, {"fleet_size": 4000, "intra_zone_median_seconds": 120, "ks_distance": 0.12746122877003807, "simulated_median_wait": 206.35267676574625}, {"fleet_size": 4000, "intra_zone_median_seconds": 150, "ks_distance": 0.22178247773333154, "simulated_median_wait": 238.80798189898178}, {"fleet_size": 4000, "intra_zone_median_seconds": 180, "ks_distance": 0.3112010550262048, "simulated_median_wait": 273.6278933119793}, {"fleet_size": 4000, "intra_zone_median_seconds": 240, "ks_distance": 0.44924590107678497, "simulated_median_wait": 343.054438330204}, {"fleet_size": 4000, "intra_zone_median_seconds": 300, "ks_distance": 0.5670573426774508, "simulated_median_wait": 412.76332306492804}, {"fleet_size": 5000, "intra_zone_median_seconds": 45, "ks_distance": 0.31379727488981657, "simulated_median_wait": 112.51509284075883}, {"fleet_size": 5000, "intra_zone_median_seconds": 60, "ks_distance": 0.2280965804917052, "simulated_median_wait": 132.37670452016073}, {"fleet_size": 5000, "intra_zone_median_seconds": 90, "ks_distance": 0.0883751026198473, "simulated_median_wait": 164.76899943844558}, {"fleet_size": 5000, "intra_zone_median_seconds": 120, "ks_distance": 0.08432354100531259, "simulated_median_wait": 195.61728305318684}, {"fleet_size": 5000, "intra_zone_median_seconds": 150, "ks_distance": 0.1881470524537947, "simulated_median_wait": 227.22562897154637}, {"fleet_size": 5000, "intra_zone_median_seconds": 180, "ks_distance": 0.27565600198904555, "simulated_median_wait": 258.1890865878595}, {"fleet_size": 5000, "intra_zone_median_seconds": 240, "ks_distance": 0.41889559463740805, "simulated_median_wait": 321.1849831719337}, {"fleet_size": 5000, "intra_zone_median_seconds": 300, "ks_distance": 0.5329534153168567, "simulated_median_wait": 387.4980335942091}, {"fleet_size": 6500, "intra_zone_median_seconds": 45, "ks_distance": 0.33985605402111657, "simulated_median_wait": 108.66741754809846}, {"fleet_size": 6500, "intra_zone_median_seconds": 60, "ks_distance": 0.24940100307684906, "simulated_median_wait": 127.53946706081115}, {"fleet_size": 6500, "intra_zone_median_seconds": 90, "ks_distance": 0.10278611582210223, "simulated_median_wait": 159.45989832490022}, {"fleet_size": 6500, "intra_zone_median_seconds": 120, "ks_distance": 0.05772501501292493, "simulated_median_wait": 190.24848140282666}, {"fleet_size": 6500, "intra_zone_median_seconds": 150, "ks_distance": 0.16621151488072733, "simulated_median_wait": 219.89808597139563}, {"fleet_size": 6500, "intra_zone_median_seconds": 180, "ks_distance": 0.2627603055986689, "simulated_median_wait": 251.2404187042739}, {"fleet_size": 6500, "intra_zone_median_seconds": 240, "ks_distance": 0.3993141037655874, "simulated_median_wait": 311.1545348610648}, {"fleet_size": 6500, "intra_zone_median_seconds": 300, "ks_distance": 0.5194230147199983, "simulated_median_wait": 375.13490352435525}, {"fleet_size": 8000, "intra_zone_median_seconds": 45, "ks_distance": 0.34774369742152084, "simulated_median_wait": 107.46817335290325}, {"fleet_size": 8000, "intra_zone_median_seconds": 60, "ks_distance": 0.2553835228999244, "simulated_median_wait": 126.6551253134271}, {"fleet_size": 8000, "intra_zone_median_seconds": 90, "ks_distance": 0.10660092748468042, "simulated_median_wait": 158.19743154592197}, {"fleet_size": 8000, "intra_zone_median_seconds": 120, "ks_distance": 0.05216562787417045, "simulated_median_wait": 189.02093863457412}, {"fleet_size": 8000, "intra_zone_median_seconds": 150, "ks_distance": 0.15812363266246687, "simulated_median_wait": 217.20428967461635}, {"fleet_size": 8000, "intra_zone_median_seconds": 180, "ks_distance": 0.25426316932292437, "simulated_median_wait": 247.7698746019687}, {"fleet_size": 8000, "intra_zone_median_seconds": 240, "ks_distance": 0.3969293526982306, "simulated_median_wait": 306.98842571584896}, {"fleet_size": 8000, "intra_zone_median_seconds": 300, "ks_distance": 0.5101336103260329, "simulated_median_wait": 368.79460754914635}, {"fleet_size": 10000, "intra_zone_median_seconds": 45, "ks_distance": 0.35039323405251893, "simulated_median_wait": 106.78607971190104}, {"fleet_size": 10000, "intra_zone_median_seconds": 60, "ks_distance": 0.257606313716681, "simulated_median_wait": 126.11096368709343}, {"fleet_size": 10000, "intra_zone_median_seconds": 90, "ks_distance": 0.11001527933653227, "simulated_median_wait": 157.43407662441405}, {"fleet_size": 10000, "intra_zone_median_seconds": 120, "ks_distance": 0.05028280301552113, "simulated_median_wait": 188.37693014058095}, {"fleet_size": 10000, "intra_zone_median_seconds": 150, "ks_distance": 0.15678611230889627, "simulated_median_wait": 216.90289329895404}, {"fleet_size": 10000, "intra_zone_median_seconds": 180, "ks_distance": 0.24948007143143408, "simulated_median_wait": 246.9376614323188}, {"fleet_size": 10000, "intra_zone_median_seconds": 240, "ks_distance": 0.3945811340503402, "simulated_median_wait": 305.54309866038517}, {"fleet_size": 10000, "intra_zone_median_seconds": 300, "ks_distance": 0.5088957685689142, "simulated_median_wait": 369.1617912698366}]}, "studies": {"shortage": {"regime": "shortage", "fleet_size": 3200, "n_bootstrap": 200, "n_replications": 5, "tuned_params": {"batched_radius_seconds": 638.0043386568241, "value_radius_seconds": 560.6620166338553, "value_weight": 0.8372789149774531, "lookahead_seconds": 384.09219157492674}, "tuning_best_scores": {"batched": 277.2592062115842, "value_aware": 264.88330194349845, "lookahead_rebalance": 189.94051007910917}, "tuning_infeasible": [], "reference_fraction_served": 0.8760646573319621, "runtime_minutes": 454.05706828832626, "policies": [{"policy": "greedy", "label": "Greedy nearest-vehicle", "mean_wait_seconds": 313.73345736349535, "mean_wait_ci": [301.43430710637807, 329.3775022982883], "gain_vs_reference_seconds": 0.0, "gain_vs_reference_ci": [0.0, 0.0], "gain_vs_reference_pct": 0.0, "probability_ranked_first": 0.0, "fraction_served": 0.8743912964418592, "fraction_served_ci": [0.8711097957971674, 0.878264148197692]}, {"policy": "batched", "label": "Batched matching", "mean_wait_seconds": 276.157870916716, "mean_wait_ci": [267.63334640333903, 285.2767973381988], "gain_vs_reference_seconds": 37.57558644677937, "gain_vs_reference_ci": [29.442657747498384, 45.89679122472019], "gain_vs_reference_pct": 11.957752615061326, "probability_ranked_first": 0.0, "fraction_served": 0.8890271646824175, "fraction_served_ci": [0.8862147685853404, 0.8918292540227964]}, {"policy": "value_aware", "label": "Value-aware matching", "mean_wait_seconds": 257.2337641914844, "mean_wait_ci": [251.47167970548585, 264.3284069355796], "gain_vs_reference_seconds": 56.49969317201098, "gain_vs_reference_ci": [45.73741991770726, 69.1671324212571], "gain_vs_reference_pct": 17.979472434930777, "probability_ranked_first": 0.0, "fraction_served": 0.8781363573638384, "fraction_served_ci": [0.8726685086726603, 0.8831580463324934]}, {"policy": "fluid_rebalance", "label": "Value-aware + fluid rebalancing", "mean_wait_seconds": 194.47419572721606, "mean_wait_ci": [192.3181711561259, 196.88309221328151], "gain_vs_reference_seconds": 119.25926163627932, "gain_vs_reference_ci": [106.71653290519353, 133.95097603483734], "gain_vs_reference_pct": 37.982429592866715, "probability_ranked_first": 0.0, "fraction_served": 0.9090082571929085, "fraction_served_ci": [0.9070850036185732, 0.9112702946740543]}, {"policy": "lookahead_rebalance", "label": "Value-aware + lookahead rebalancing", "mean_wait_seconds": 191.29176827699234, "mean_wait_ci": [189.4229599395143, 193.1736519154476], "gain_vs_reference_seconds": 122.441689086503, "gain_vs_reference_ci": [109.89745214253331, 137.11713294841164], "gain_vs_reference_pct": 38.99750667153286, "probability_ranked_first": 1.0, "fraction_served": 0.9102000603599109, "fraction_served_ci": [0.9082163452916033, 0.911961451088876]}], "best_policy": "lookahead_rebalance", "nominal_ranking": ["fluid_rebalance", "lookahead_rebalance", "value_aware", "batched", "greedy"], "indifference_set": ["lookahead_rebalance"], "kendall_tau_mean": 0.8, "fraction_draws_matching_nominal": 0.0, "variance_decomposition_reference_vs_best": {"within_theta_variance": 140.41755912179303, "across_theta_variance": 49.29231076606292, "total_variance": 189.70986988785594, "input_uncertainty_ratio": 0.3510409315925267}, "fleet_curve": {"fleet_sizes": [2560, 2880, 3200, 3680, 4160, 4800, 5600, 6400], "mean_wait_seconds": [543.4108403052, 377.19718677667714, 323.88448501063436, 265.55809884503293, 234.25128774038845, 216.92658475193298, 204.2877665010068, 195.83498595817704]}, "vehicles_worth": {"greedy": {"vehicles_worth_mean": 0.0, "vehicles_worth_ci": [0.0, 0.0], "fraction_draws_lower_bound": 0.0, "delta_driver_hours_mean": 0.0}, "batched": {"vehicles_worth_mean": 308.46721118897824, "vehicles_worth_ci": [242.29986885650763, 377.71000804535316], "fraction_draws_lower_bound": 0.0, "delta_driver_hours_mean": 1850.8032671338694}, "value_aware": {"vehicles_worth_mean": 523.3647900475193, "vehicles_worth_ci": [423.6337614107565, 621.4245342115814], "fraction_draws_lower_bound": 0.0, "delta_driver_hours_mean": 3140.1887402851153}, "fluid_rebalance": {"vehicles_worth_mean": 3108.5543018864187, "vehicles_worth_ci": [2996.483269739809, 3223.048946650622], "fraction_draws_lower_bound": 0.875, "delta_driver_hours_mean": 18651.32581131851}, "lookahead_rebalance": {"vehicles_worth_mean": 3115.6985815667385, "vehicles_worth_ci": [3015.2451042749785, 3232.970858234929], "fraction_draws_lower_bound": 1.0, "delta_driver_hours_mean": 18694.19148940043}}}, "tight": {"regime": "tight", "fleet_size": 4000, "n_bootstrap": 200, "n_replications": 5, "tuned_params": {"batched_radius_seconds": 638.0043386568241, "value_radius_seconds": 638.0043386568241, "value_weight": 1.1042398249928138, "lookahead_seconds": 439.60374802320746}, "tuning_best_scores": {"batched": 228.29146025193043, "value_aware": 227.51341296131923, "lookahead_rebalance": 182.41581042064684}, "tuning_infeasible": [], "reference_fraction_served": 0.9083669540911847, "runtime_minutes": 530.0986088991165, "policies": [{"policy": "greedy", "label": "Greedy nearest-vehicle", "mean_wait_seconds": 240.08947820357673, "mean_wait_ci": [232.79281041402214, 248.00509810657073], "gain_vs_reference_seconds": 0.0, "gain_vs_reference_ci": [0.0, 0.0], "gain_vs_reference_pct": 0.0, "probability_ranked_first": 0.0, "fraction_served": 0.9027779539966702, "fraction_served_ci": [0.899902463880122, 0.9054428818690577]}, {"policy": "batched", "label": "Batched matching", "mean_wait_seconds": 233.15871483363242, "mean_wait_ci": [226.5428133354773, 240.7725939999421], "gain_vs_reference_seconds": 6.930763369944311, "gain_vs_reference_ci": [2.9778165026282513, 10.82271442817752], "gain_vs_reference_pct": 2.8806000647401646, "probability_ranked_first": 0.0, "fraction_served": 0.9043462203415988, "fraction_served_ci": [0.9015319973219732, 0.9069767347479544]}, {"policy": "value_aware", "label": "Value-aware matching", "mean_wait_seconds": 233.37906201861762, "mean_wait_ci": [226.207541102672, 240.89305849558514], "gain_vs_reference_seconds": 6.710416184959063, "gain_vs_reference_ci": [2.0284028149025306, 10.843896761793625], "gain_vs_reference_pct": 2.788372097394776, "probability_ranked_first": 0.0, "fraction_served": 0.9041570772222357, "fraction_served_ci": [0.9013068287020681, 0.9065782283334192]}, {"policy": "fluid_rebalance", "label": "Value-aware + fluid rebalancing", "mean_wait_seconds": 182.29305221164185, "mean_wait_ci": [181.09797334995358, 183.46305590931826], "gain_vs_reference_seconds": 57.79642599193487, "gain_vs_reference_ci": [50.966782431505614, 65.79172246882946], "gain_vs_reference_pct": 24.051411346838968, "probability_ranked_first": 1.0, "fraction_served": 0.9191139801583368, "fraction_served_ci": [0.9178470112529921, 0.9205468320265828]}, {"policy": "lookahead_rebalance", "label": "Value-aware + lookahead rebalancing", "mean_wait_seconds": 183.64886722733345, "mean_wait_ci": [182.40813606964625, 184.8778747478595], "gain_vs_reference_seconds": 56.44061097624324, "gain_vs_reference_ci": [49.438140134673944, 64.33844553702184], "gain_vs_reference_pct": 23.48652016608981, "probability_ranked_first": 0.0, "fraction_served": 0.9183168521594505, "fraction_served_ci": [0.9169793933723966, 0.9197806155955817]}], "best_policy": "fluid_rebalance", "nominal_ranking": ["fluid_rebalance", "lookahead_rebalance", "batched", "value_aware", "greedy"], "indifference_set": ["fluid_rebalance"], "kendall_tau_mean": 0.929, "fraction_draws_matching_nominal": 0.0, "variance_decomposition_reference_vs_best": {"within_theta_variance": 53.502975995810246, "across_theta_variance": 16.709379115080957, "total_variance": 70.2123551108912, "input_uncertainty_ratio": 0.312307470829089}, "fleet_curve": {"fleet_sizes": [3200, 3600, 4000, 4600, 5200, 6000, 7000, 8000], "mean_wait_seconds": [323.88448501063436, 267.4050311621283, 250.35641573035846, 221.43762306075868, 208.65453192361838, 198.3555486294807, 190.7278505588588, 190.21358130321198]}, "vehicles_worth": {"greedy": {"vehicles_worth_mean": 0.0, "vehicles_worth_ci": [0.0, 0.0], "fraction_draws_lower_bound": 0.0, "delta_driver_hours_mean": 0.0}, "batched": {"vehicles_worth_mean": 143.83625861111193, "vehicles_worth_ci": [61.78300463612221, 224.54701795807657], "fraction_draws_lower_bound": 0.0, "delta_driver_hours_mean": 863.0175516666716}, "value_aware": {"vehicles_worth_mean": 139.26454939414555, "vehicles_worth_ci": [42.08480287701992, 224.9865038078105], "fraction_draws_lower_bound": 0.0, "delta_driver_hours_mean": 835.5872963648733}, "fluid_rebalance": {"vehicles_worth_mean": 3787.0225888314994, "vehicles_worth_ci": [3635.5946352878073, 3951.2154400638], "fraction_draws_lower_bound": 1.0, "delta_driver_hours_mean": 22722.135532988996}, "lookahead_rebalance": {"vehicles_worth_mean": 3787.0225888314994, "vehicles_worth_ci": [3635.5946352878073, 3951.2154400638], "fraction_draws_lower_bound": 1.0, "delta_driver_hours_mean": 22722.135532988996}}}}};
+const POLICY_COLOR = { greedy: "var(--baseline)", batched: "var(--s1)", value_aware: "var(--s2)", fluid_rebalance: "var(--s3)", lookahead_rebalance: "var(--s4)" };
+const SVGNS = "http://www.w3.org/2000/svg";
+const fmt = (v, d = 0) => Number(v).toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
+const secs = v => `${fmt(v)}s`;
+
+function el(tag, attrs = {}, parent) {
+  const node = document.createElementNS(SVGNS, tag);
+  for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
+  if (parent) parent.appendChild(node);
+  return node;
+}
+function text(parent, x, y, str, attrs = {}) {
+  const t = el("text", { x, y, ...attrs }, parent);
+  t.textContent = str;
+  return t;
+}
+function niceMax(v) {
+  const p = Math.pow(10, Math.floor(Math.log10(v)));
+  return Math.ceil(v / p) * p;
+}
+function chartShell(id, w, h) {
+  const host = document.getElementById(id);
+  host.innerHTML = "";
+  const svg = el("svg", { viewBox: `0 0 ${w} ${h}`, role: "img" }, host);
+  const tip = document.createElement("div");
+  tip.className = "tip"; tip.hidden = true; host.appendChild(tip);
+  const show = (evt, html) => {
+    const r = host.getBoundingClientRect();
+    const x = (evt.touches ? evt.touches[0].clientX : evt.clientX) - r.left;
+    const y = (evt.touches ? evt.touches[0].clientY : evt.clientY) - r.top;
+    tip.innerHTML = html; tip.hidden = false;
+    tip.style.left = `${Math.min(Math.max(x, 70), r.width - 70)}px`; tip.style.top = `${y}px`;
+  };
+  const hide = () => { tip.hidden = true; };
+  return { svg, show, hide };
+}
+function yAxis(svg, m, w, h, max, ticks, label) {
+  for (let i = 0; i <= ticks; i++) {
+    const v = max * i / ticks, y = m.t + (h - m.t - m.b) * (1 - i / ticks);
+    el("line", { x1: m.l, x2: w - m.r, y1: y, y2: y, stroke: "var(--grid)", "stroke-width": 1 }, svg);
+    text(svg, m.l - 8, y + 4, fmt(v), { "text-anchor": "end" });
+  }
+  if (label) text(svg, m.l, m.t - 10, label);
+}
+
+function renderStats() {
+  const s = DATA.eda.summary, v = DATA.validation;
+  const best = bestAcrossRegimes();
+  const items = [
+    [fmt(s.trips), `real trips across ${s.days} weekdays and ${s.zones} zones`],
+    [v.wait_ks_distance.toFixed(3), `held-out wait KS distance, threshold 0.10 <span class="pass">PASS</span>`],
+    [secs(s.median_wait_s), `median real wait: ${secs(s.median_approach_s)} approach + ${secs(s.median_boarding_s)} boarding`],
+  ];
+  if (best) items.push([`${fmt(best.pct, 1)}%`, `largest wait cut vs greedy: ${DATA.labels[best.policy]}, ${best.regime} supply`]);
+  document.getElementById("stats").innerHTML = items.map(([b, span]) => `<div class="stat"><b>${b}</b><span>${span}</span></div>`).join("");
+}
+
+function renderDemand() {
+  const rows = DATA.eda.demand, W = 520, H = 250, m = { l: 48, r: 12, t: 24, b: 30 };
+  const { svg, show, hide } = chartShell("demand-chart", W, H);
+  const max = niceMax(Math.max(...rows.map(r => r.max)));
+  yAxis(svg, m, W, H, max, 4, "requests");
+  const x = i => m.l + (W - m.l - m.r) * i / (rows.length - 1);
+  const y = v => m.t + (H - m.t - m.b) * (1 - v / max);
+  const band = rows.map((r, i) => `${x(i)},${y(r.max)}`).concat(rows.map((r, i) => `${x(i)},${y(r.min)}`).reverse());
+  el("polygon", { points: band.join(" "), fill: "var(--band)" }, svg);
+  el("polyline", { points: rows.map((r, i) => `${x(i)},${y(r.mean)}`).join(" "), fill: "none", stroke: "var(--s1)", "stroke-width": 2 }, svg);
+  rows.forEach((r, i) => { if (i % 4 === 0) text(svg, x(i), H - 8, r.slot, { "text-anchor": "middle" }); });
+  const cross = el("line", { y1: m.t, y2: H - m.b, stroke: "var(--faint)", "stroke-width": 1, visibility: "hidden" }, svg);
+  const marker = el("circle", { r: 4.5, fill: "var(--s1)", stroke: "var(--panel)", "stroke-width": 2, visibility: "hidden" }, svg);
+  const hit = el("rect", { x: m.l, y: m.t, width: W - m.l - m.r, height: H - m.t - m.b, fill: "transparent" }, svg);
+  const move = evt => {
+    const box = svg.getBoundingClientRect();
+    const px = ((evt.touches ? evt.touches[0].clientX : evt.clientX) - box.left) * W / box.width;
+    const i = Math.max(0, Math.min(rows.length - 1, Math.round((px - m.l) / (W - m.l - m.r) * (rows.length - 1))));
+    const r = rows[i];
+    cross.setAttribute("x1", x(i)); cross.setAttribute("x2", x(i)); cross.setAttribute("visibility", "visible");
+    marker.setAttribute("cx", x(i)); marker.setAttribute("cy", y(r.mean)); marker.setAttribute("visibility", "visible");
+    show(evt, `${r.slot}<br>mean ${fmt(r.mean)} · range ${fmt(r.min)}–${fmt(r.max)}`);
+  };
+  hit.addEventListener("mousemove", move); hit.addEventListener("touchmove", move, { passive: true });
+  hit.addEventListener("mouseleave", () => { hide(); cross.setAttribute("visibility", "hidden"); marker.setAttribute("visibility", "hidden"); });
+}
+
+function renderComponents() {
+  const rows = DATA.eda.components, W = 520, H = 250, m = { l: 44, r: 8, t: 24, b: 30 };
+  const { svg, show, hide } = chartShell("components-chart", W, H);
+  const max = niceMax(Math.max(...rows.map(r => r.wait)) * 1.1);
+  yAxis(svg, m, W, H, max, 4, "seconds");
+  const slot = (W - m.l - m.r) / rows.length, bw = slot * 0.58;
+  const y = v => m.t + (H - m.t - m.b) * (1 - v / max);
+  rows.forEach((r, i) => {
+    const cx = m.l + slot * (i + 0.5), x0 = cx - bw / 2;
+    const g = el("g", {}, svg);
+    el("rect", { x: x0, y: y(r.approach), width: bw, height: y(0) - y(r.approach), fill: "var(--s1)" }, g);
+    el("rect", { x: x0, y: y(r.approach + r.boarding), width: bw, height: y(r.approach) - y(r.approach + r.boarding) - 2, fill: "var(--s2)", rx: 3 }, g);
+    text(svg, cx, y(r.approach + r.boarding) - 6, secs(r.wait), { "text-anchor": "middle", class: "strong" });
+    text(svg, cx, H - 8, `${r.hour}:00`, { "text-anchor": "middle" });
+    const hit = el("rect", { x: cx - slot / 2, y: m.t, width: slot, height: H - m.t - m.b, fill: "transparent" }, svg);
+    hit.addEventListener("mousemove", e => show(e, `${r.hour}:00–${r.hour + 1}:00<br>approach ${secs(r.approach)} · boarding ${secs(r.boarding)}<br>${fmt(r.trips)} trips`));
+    hit.addEventListener("mouseleave", hide);
+  });
+}
+
+function renderQuantiles() {
+  const q = DATA.validation.quantiles, W = 520, H = 250, m = { l: 44, r: 8, t: 24, b: 30 };
+  const { svg, show, hide } = chartShell("quantile-chart", W, H);
+  const max = niceMax(Math.max(...q.map(r => Math.max(r.held_out_wait, r.simulated_wait))) * 1.1);
+  yAxis(svg, m, W, H, max, 4, "seconds");
+  const slot = (W - m.l - m.r) / q.length;
+  const y = v => m.t + (H - m.t - m.b) * (1 - v / max);
+  q.forEach((r, i) => {
+    const cx = m.l + slot * (i + 0.5);
+    el("line", { x1: cx - 9, x2: cx + 9, y1: y(r.held_out_wait), y2: y(r.simulated_wait), stroke: "var(--faint)", "stroke-width": 1.5 }, svg);
+    el("circle", { cx: cx - 9, cy: y(r.held_out_wait), r: 5.5, fill: "var(--s1)", stroke: "var(--panel)", "stroke-width": 2 }, svg);
+    el("circle", { cx: cx + 9, cy: y(r.simulated_wait), r: 5.5, fill: "var(--s2)", stroke: "var(--panel)", "stroke-width": 2 }, svg);
+    text(svg, cx, H - 8, `p${Math.round(r.quantile * 100)}`, { "text-anchor": "middle" });
+    const hit = el("rect", { x: cx - slot / 2, y: m.t, width: slot, height: H - m.t - m.b, fill: "transparent" }, svg);
+    hit.addEventListener("mousemove", e => show(e, `p${Math.round(r.quantile * 100)} wait<br>real ${secs(r.held_out_wait)} · simulated ${secs(r.simulated_wait)}`));
+    hit.addEventListener("mouseleave", hide);
+  });
+}
+
+function renderGrid() {
+  const g = DATA.validation.grid;
+  const fleets = [...new Set(g.map(r => r.fleet_size))].sort((a, b) => a - b);
+  const meds = [...new Set(g.map(r => r.intra_zone_median_seconds))].sort((a, b) => a - b);
+  const W = 520, H = 290, m = { l: 44, r: 4, t: 8, b: 40 };
+  const { svg, show, hide } = chartShell("grid-chart", W, H);
+  const cw = (W - m.l - m.r) / fleets.length, ch = (H - m.t - m.b) / meds.length;
+  const ramp = ["#cde2fb", "#9ec5f4", "#6da7ec", "#3987e5", "#256abf", "#184f95", "#0d366b"];
+  g.forEach(r => {
+    const i = fleets.indexOf(r.fleet_size), j = meds.indexOf(r.intra_zone_median_seconds);
+    const fit = Math.max(0, Math.min(0.999, 1 - r.ks_distance));
+    const step = Math.min(ramp.length - 1, Math.floor(fit * ramp.length));
+    const x = m.l + i * cw, y = m.t + j * ch;
+    el("rect", { x: x + 1, y: y + 1, width: cw - 2, height: ch - 2, fill: ramp[step], rx: 2 }, svg);
+    if (r.ks_distance <= 0.10) el("rect", { x: x + 2, y: y + 2, width: cw - 4, height: ch - 4, fill: "none", stroke: "var(--s4)", "stroke-width": 2, rx: 2 }, svg);
+    const t = text(svg, x + cw / 2, y + ch / 2 + 4, r.ks_distance.toFixed(2), { "text-anchor": "middle" });
+    t.style.fill = step >= 4 ? "#ffffff" : "#15181a";
+    t.style.fontSize = "9.5px";
+    const hit = el("rect", { x, y, width: cw, height: ch, fill: "transparent" }, svg);
+    hit.addEventListener("mousemove", e => show(e, `${fmt(r.fleet_size)} vehicles · ${r.intra_zone_median_seconds}s same-zone pickup<br>KS ${r.ks_distance.toFixed(3)}`));
+    hit.addEventListener("mouseleave", hide);
+  });
+  fleets.forEach((f, i) => { if (i % 2 === 0 || fleets.length < 8) text(svg, m.l + (i + 0.5) * cw, H - 22, fmt(f), { "text-anchor": "middle" }); });
+  text(svg, m.l + (W - m.l - m.r) / 2, H - 4, "fleet size (vehicles)", { "text-anchor": "middle" });
+  meds.forEach((v, j) => text(svg, m.l - 6, m.t + (j + 0.5) * ch + 4, `${v}s`, { "text-anchor": "end" }));
+}
+
+const REGIMES = () => DATA.regime_order.filter(r => DATA.studies[r]);
+function pctGain(study, name) {
+  const ref = study.policies.find(p => p.policy === "greedy").mean_wait_seconds;
+  const p = study.policies.find(q => q.policy === name);
+  return { pct: 100 * p.gain_vs_reference_seconds / ref, lo: 100 * p.gain_vs_reference_ci[0] / ref, hi: 100 * p.gain_vs_reference_ci[1] / ref };
+}
+function bestAcrossRegimes() {
+  let best = null;
+  for (const regime of REGIMES()) {
+    const s = DATA.studies[regime];
+    for (const p of s.policies) {
+      if (p.policy === "greedy") continue;
+      const g = pctGain(s, p.policy);
+      if (!best || g.pct > best.pct) best = { regime, policy: p.policy, pct: g.pct };
+    }
+  }
+  return best;
+}
+
+function renderGain(regime) {
+  const s = DATA.studies[regime];
+  const names = DATA.policy_order.filter(n => n !== "greedy");
+  const gains = names.map(n => ({ n, ...pctGain(s, n) }));
+  const W = 1000, rowH = 44, m = { l: 290, r: 90, t: 16, b: 36 }, H = m.t + m.b + rowH * names.length;
+  const { svg, show, hide } = chartShell("gain-chart", W, H);
+  const lo = Math.min(0, ...gains.map(g => g.lo)), hi = Math.max(...gains.map(g => g.hi));
+  const span = niceMax(Math.max(Math.abs(lo), hi) * 1.1);
+  const min = lo < 0 ? -span : 0, max = span;
+  const x = v => m.l + (W - m.l - m.r) * (v - min) / (max - min);
+  for (let i = 0; i <= 4; i++) {
+    const v = min + (max - min) * i / 4;
+    el("line", { x1: x(v), x2: x(v), y1: m.t, y2: H - m.b, stroke: "var(--grid)" }, svg);
+    text(svg, x(v), H - m.b + 18, `${fmt(v)}%`, { "text-anchor": "middle" });
+  }
+  el("line", { x1: x(0), x2: x(0), y1: m.t, y2: H - m.b, stroke: "var(--baseline)", "stroke-width": 1.5 }, svg);
+  text(svg, x(0) + 6, m.t + 10, "greedy", {});
+  gains.forEach((g, i) => {
+    const cy = m.t + rowH * (i + 0.5);
+    text(svg, m.l - 14, cy + 4, DATA.labels[g.n], { "text-anchor": "end", class: "strong", style: "font-family: var(--body); font-size: 13px" });
+    el("line", { x1: x(g.lo), x2: x(g.hi), y1: cy, y2: cy, stroke: POLICY_COLOR[g.n], "stroke-width": 2.5, "stroke-linecap": "round" }, svg);
+    el("circle", { cx: x(g.pct), cy, r: 6.5, fill: POLICY_COLOR[g.n], stroke: "var(--panel)", "stroke-width": 2 }, svg);
+    text(svg, x(g.hi) + 10, cy + 4, `${fmt(g.pct, 1)}%`, { class: "strong" });
+    const hit = el("rect", { x: 0, y: cy - rowH / 2, width: W, height: rowH, fill: "transparent" }, svg);
+    hit.addEventListener("mousemove", e => show(e, `${DATA.labels[g.n]}<br>${fmt(g.pct, 1)}% shorter waits (95% CI ${fmt(g.lo, 1)}–${fmt(g.hi, 1)}%)`));
+    hit.addEventListener("mouseleave", hide);
+  });
+}
+
+function renderPolicyTable(regime) {
+  const s = DATA.studies[regime];
+  const head = `<tr><th>Policy</th><th>Mean wait</th><th>95% CI</th><th>Riders served</th><th>Ranked first</th><th>Worth in cars</th></tr>`;
+  const rows = DATA.policy_order.map(name => {
+    const p = s.policies.find(q => q.policy === name);
+    const worth = s.vehicles_worth[name];
+    const best = name === s.best_policy ? ` <span class="chip best">best</span>` : "";
+    const worthText = name === "greedy" ? "—" : `${worth.fraction_draws_lower_bound > 0 ? "≥ " : ""}${fmt(worth.vehicles_worth_mean)}`;
+    return `<tr><td><span class="dot" style="background:${POLICY_COLOR[name]}"></span>${DATA.labels[name]}${best}</td>
+      <td class="num">${secs(p.mean_wait_seconds)}</td>
+      <td class="num">${secs(p.mean_wait_ci[0])}–${secs(p.mean_wait_ci[1])}</td>
+      <td class="num">${fmt(100 * p.fraction_served, 1)}%</td>
+      <td class="num">${fmt(100 * p.probability_ranked_first)}%</td>
+      <td class="num">${worthText}</td></tr>`;
+  }).join("");
+  document.getElementById("policy-table").innerHTML = `<thead>${head}</thead><tbody>${rows}</tbody>`;
+  document.getElementById("regime-note").textContent =
+    `${fmt(s.fleet_size)} cars · ${s.n_bootstrap} bootstrap draws × ${s.n_replications} replications · statistically tied with the best: ${s.indifference_set.map(n => DATA.labels[n]).join(", ")}`;
+}
+
+function renderRegimeTable() {
+  const regimes = REGIMES();
+  const head = `<tr><th>Policy</th>${regimes.map(r => `<th>${r} · ${fmt(DATA.studies[r].fleet_size)}</th>`).join("")}</tr>`;
+  const body = DATA.policy_order.filter(n => n !== "greedy").map(n => `<tr><td><span class="dot" style="background:${POLICY_COLOR[n]}"></span>${DATA.labels[n]}</td>${
+    regimes.map(r => { const g = pctGain(DATA.studies[r], n); return `<td class="num">${fmt(g.pct, 1)}% <span style="color:var(--faint)">(${fmt(g.lo, 1)}–${fmt(g.hi, 1)})</span></td>`; }).join("")}</tr>`).join("");
+  const greedyRow = `<tr><td><span class="dot" style="background:var(--baseline)"></span>Greedy mean wait</td>${regimes.map(r => `<td class="num">${secs(DATA.studies[r].policies.find(p => p.policy === "greedy").mean_wait_seconds)}</td>`).join("")}</tr>`;
+  document.getElementById("regime-table").innerHTML = `<thead>${head}</thead><tbody>${greedyRow}${body}</tbody>`;
+}
+
+function renderRegimes() {
+  const seg = document.getElementById("regime-seg");
+  const regimes = REGIMES();
+  let current = regimes.includes("tight") ? "tight" : regimes[0];
+  try { const saved = localStorage.getItem("regime"); if (regimes.includes(saved)) current = saved; } catch (e) { /* storage unavailable */ }
+  const select = r => {
+    current = r;
+    try { localStorage.setItem("regime", r); } catch (e) { /* storage unavailable */ }
+    [...seg.children].forEach(b => b.setAttribute("aria-pressed", String(b.dataset.regime === r)));
+    renderGain(r); renderPolicyTable(r);
+  };
+  seg.innerHTML = regimes.map(r => `<button type="button" id="regime-${r}" data-regime="${r}">${r} · ${fmt(DATA.studies[r].fleet_size)} cars</button>`).join("");
+  seg.addEventListener("click", e => { const b = e.target.closest("button"); if (b) select(b.dataset.regime); });
+  select(current);
+}
+
+function renderText() {
+  const s = DATA.eda.summary, v = DATA.validation;
+  document.getElementById("data-lede").textContent =
+    `${fmt(s.trips_per_day)} Uber trips a day start and end in Manhattan between noon and 6pm. The median rider waits ${secs(s.median_wait_s)} and the slowest 10% wait over ${secs(s.p90_wait_s)}; at the 17:00 peak at least ${fmt(s.peak_busy_vehicles)} cars are busy with riders at once.`;
+  document.getElementById("validation-lede").textContent =
+    `Input models are fitted on 10 weekdays, the two unobservable supply parameters are calibrated on those same days, and the twin is then scored once against 4 held-out weekdays: KS distance ${v.wait_ks_distance.toFixed(3)} on wait times (threshold 0.10) and ${v.hour_of_day_cosine.toFixed(3)} cosine similarity on the demand curve (threshold 0.90). The thresholds were fixed before any real-data run.`;
+  const notes = [
+    ["Simulator.", "Event-driven, 69 TLC zones, 5-second dispatch ticks. Demand is a non-homogeneous Poisson process per zone and 15-minute bin; destinations, trip times and boarding delays are fitted from the trips."],
+    ["Algorithms.", "Greedy nearest-vehicle; batched optimal matching (Hungarian); value-aware matching that prices the drop-off zone with a dynamic-programming value function; and two rebalancing layers that move idle cars toward expected (fluid LP) or sampled (Monte Carlo lookahead) demand."],
+    ["Uncertainty.", "Each bootstrap draw resamples the trips, refits every input model and reruns all policies with common random numbers, so differences are paired. A policy is only called better when its interval excludes zero."],
+    ["Scale.", "Exact zone-level reductions (interchangeable vehicles, candidate pruning, a transportation LP for rebalancing) cut a simulated hour from 7.4s to under 1s; the bootstrap ran in parallel on Kaggle."],
+    ["Limits.", "Fleet size is identified only from below; riders' patience is assumed (NYC data has no cancellations); zones are treated as points, which misses the very shortest pickups."],
+  ];
+  document.getElementById("notes").innerHTML = notes.map(([b, t]) => `<p><b>${b}</b> ${t}</p>`).join("");
+  document.getElementById("footer").textContent = `Built from results generated ${DATA.generated}. Data: NYC Taxi & Limousine Commission high-volume FHV trip records.`;
+}
+
+renderStats(); renderText(); renderDemand(); renderComponents(); renderQuantiles(); renderGrid();
+if (REGIMES().length) { renderRegimes(); renderRegimeTable(); } else { document.getElementById("study").hidden = true; }
+</script>

@@ -75,6 +75,16 @@ def _report(args: argparse.Namespace) -> None:
     print(f"wrote {build_dashboard(args.results_dir, args.dashboard)}")
 
 
+def _refresh(args: argparse.Namespace) -> None:
+    from dispatch_eval.studies.policy_study import refresh_policy_study
+
+    cfg = _load_config(args.config)
+    hours = cfg["data"]["window_end_hour"] - cfg["data"]["window_start_hour"]
+    for regime in args.regimes:
+        summary = refresh_policy_study(regime, args.output_dir, float(hours))
+        print(f"refreshed {regime}: best policy {summary['best_policy']}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="dispatch-eval", description=__doc__)
     sub = parser.add_subparsers(required=True)
@@ -98,6 +108,12 @@ def main() -> None:
     merge.add_argument("--regime", required=True)
     merge.add_argument("--output-dir", type=Path, default=Path("results"))
     merge.set_defaults(func=_merge)
+
+    refresh = sub.add_parser("refresh", help="recompute study summaries from saved per-cell results")
+    refresh.add_argument("regimes", nargs="+")
+    refresh.add_argument("--config", type=Path, default=Path("configs/nyc.yaml"))
+    refresh.add_argument("--output-dir", type=Path, default=Path("results"))
+    refresh.set_defaults(func=_refresh)
 
     eda = sub.add_parser("eda", help="exploratory tables for the NYC study window")
     eda.add_argument("--config", type=Path, default=Path("configs/nyc.yaml"))

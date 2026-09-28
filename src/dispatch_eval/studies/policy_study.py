@@ -27,12 +27,9 @@ import polars as pl
 
 from dispatch_eval.calibration.value_function import compute_value_function
 from dispatch_eval.decision_currency import (
-    DecisionCurrencyResult,
     FleetWaitCurve,
     build_fleet_wait_curve,
-    decision_currency,
-    mean_fare_per_trip,
-    trips_per_vehicle_per_day,
+    monotone_fleet_equivalent,
 )
 from dispatch_eval.policies.nearest_idle import NearestIdlePolicy
 from dispatch_eval.policies.registry import POLICY_LABELS, build_ladder, tune_ladder
@@ -107,31 +104,34 @@ def summarize(result: RankingFlipResult, reference: str = REFERENCE_POLICY) -> d
 
 
 def paired_vehicles_worth(
-    currency: dict[str, DecisionCurrencyResult], reference: str, curve_max: float
+    result: RankingFlipResult, curve: FleetWaitCurve, horizon_hours: float,
+    reference: str = REFERENCE_POLICY,
 ) -> dict[str, dict]:
     """Extra vehicles greedy dispatch would need to match each policy.
 
-    Paired per bootstrap draw (policy's fleet-equivalent minus the
-    reference's own, in the same draw) so the offset between the nominal
-    curve and each draw's refitted world cancels. When a policy's wait
-    lies beyond the curve, the fleet-equivalent is clipped to the curve's
-    largest fleet: that draw's figure is a lower bound, and the share of
-    such draws is reported.
+    Per bootstrap draw, each policy's wait is converted to the fleet size at
+    which greedy reaches it on the (monotone) nominal curve, and greedy's
+    own draw is subtracted, so the offset between the nominal curve and each
+    draw's refitted world cancels. A policy whose wait beats greedy's best
+    wait anywhere on the curve gets the curve's largest fleet — a lower
+    bound — and the share of such draws is reported.
     """
-    ref = currency[reference]
-    ref_fleet = np.minimum(ref.actual_fleet_size + ref.vehicles_worth_per_draw, curve_max)
+    def equivalents(name: str) -> tuple[np.ndarray, np.ndarray]:
+        per_draw = result.metric_by_policy[name].mean(axis=1)
+        pairs = [monotone_fleet_equivalent(curve, w) for w in per_draw]
+        return np.array([f for f, _ in pairs]), np.array([side for _, side in pairs])
+
+    ref_fleet, _ = equivalents(reference)
     out = {}
-    for name, c in currency.items():
-        fleet = np.minimum(c.actual_fleet_size + c.vehicles_worth_per_draw, curve_max)
+    for name in result.policy_names:
+        fleet, side = equivalents(name)
         worth = fleet - ref_fleet
         mean = float(worth.mean())
         out[name] = {
             "vehicles_worth_mean": mean,
             "vehicles_worth_ci": _interval(worth),
-            "fraction_draws_lower_bound": float(np.mean(
-                c.actual_fleet_size + c.vehicles_worth_per_draw > curve_max
-            )),
-            "delta_driver_hours_mean": mean * c.horizon_hours,
+            "fraction_draws_lower_bound": float(np.mean(side == 1)),
+            "delta_driver_hours_mean": mean * horizon_hours,
         }
     return out
 
@@ -192,19 +192,11 @@ def finalize_study(meta: dict, result: RankingFlipResult, output_dir: Path) -> d
     `nyc_study_<regime>.{json,parquet}`."""
     regime = meta["regime"]
     curve = FleetWaitCurve(**meta["fleet_curve"])
-    currency = decision_currency(
-        result, REFERENCE_POLICY, curve, meta["fleet_size"],
-        horizon_hours=meta["horizon_hours"],
-        dollars_per_trip=meta["dollars_per_trip"],
-        reference_trips_per_vehicle_per_day=meta["reference_trips_per_vehicle_per_day"],
-    )
     summary = {
         **meta,
         "n_draws_completed": len(result.draw_ids) if result.draw_ids is not None else None,
         **summarize(result),
-        "vehicles_worth": paired_vehicles_worth(
-            currency, REFERENCE_POLICY, max(curve.fleet_sizes)
-        ),
+        "vehicles_worth": paired_vehicles_worth(result, curve, meta["horizon_hours"]),
     }
     output_dir.mkdir(parents=True, exist_ok=True)
     long_table(result, regime).write_parquet(output_dir / f"nyc_study_{regime}.parquet")
@@ -234,6 +226,22 @@ def merge_policy_study(regime: str, output_dir: Path) -> dict:
     merged = merge_results(shards)
     meta["runtime_minutes"] = sum(m["runtime_minutes"] for m in shard_meta)
     return finalize_study(meta, merged, output_dir)
+
+
+def refresh_policy_study(regime: str, output_dir: Path, horizon_hours: float) -> dict:
+    """Recompute a finished regime's summary from its saved per-cell table,
+    without re-running any simulation (e.g. after a change to how results
+    are summarized). Fills metadata that older result files lack."""
+    summary = json.loads((output_dir / f"nyc_study_{regime}.json").read_text())
+    table = pl.read_parquet(output_dir / f"nyc_study_{regime}.parquet")
+    derived = {"n_draws_completed", "policies", "best_policy", "indifference_set",
+               "kendall_tau_mean", "fraction_draws_matching_nominal",
+               "variance_decomposition_reference_vs_best", "vehicles_worth"}
+    meta = {k: v for k, v in summary.items() if k not in derived}
+    meta.setdefault("policy_names", table["policy"].unique(maintain_order=True).to_list())
+    meta.setdefault("horizon_hours", horizon_hours)
+    result = result_from_long_table(table, meta["policy_names"], meta["nominal_ranking"])
+    return finalize_study(meta, result, output_dir)
 
 
 def run_policy_study(
@@ -344,7 +352,6 @@ def run_policy_study(
             curve_sizes, models, twin.abandonment, NearestIdlePolicy(), twin.config,
             study["fleet_curve_replications"], study["seed"],
         )
-        reference_run = twin.simulate(fleet_size, intra, study["seed"])
 
         meta = {
             "regime": regime,
@@ -360,10 +367,6 @@ def run_policy_study(
             "fleet_curve": {"fleet_sizes": curve.fleet_sizes,
                             "mean_wait_seconds": curve.mean_wait_seconds},
             "horizon_hours": horizon / 3600.0,
-            "dollars_per_trip": mean_fare_per_trip(twin.data.calibration),
-            "reference_trips_per_vehicle_per_day": trips_per_vehicle_per_day(
-                len(reference_run.completed_requests), fleet_size, horizon / 3600.0
-            ),
             "runtime_minutes": (time.time() - started) / 60,
         }
 
