@@ -1,0 +1,435 @@
+<title>Manhattan Dispatch Twin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@85,500;85,700;100,600&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+:root {
+  --bg: #f5f6f4;
+  --panel: #fbfcfa;
+  --ink: #15181a;
+  --muted: #596066;
+  --faint: #8a9095;
+  --rule: #dde0dc;
+  --grid: #e7e9e5;
+  --baseline: #8a8984;
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100;
+  --band: #cde2fb;
+  --good: #0ca30c; --critical: #d03b3b;
+  --display: "Archivo", "Arial Narrow", system-ui, sans-serif;
+  --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #131516; --panel: #1a1c1d; --ink: #eceeed; --muted: #a6acb0; --faint: #7d8388;
+    --rule: #2c3032; --grid: #25292b; --baseline: #8e8d88;
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --band: #1c3a5e;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #131516; --panel: #1a1c1d; --ink: #eceeed; --muted: #a6acb0; --faint: #7d8388;
+  --rule: #2c3032; --grid: #25292b; --baseline: #8e8d88;
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --band: #1c3a5e;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font: 15px/1.6 var(--body); }
+.page { max-width: 1040px; margin: 0 auto; padding-inline: 20px; padding-block: 40px 64px; display: grid; gap: 56px; }
+h1, h2, h3 { font-family: var(--display); text-wrap: balance; margin: 0; }
+h1 { font-size: clamp(30px, 5vw, 46px); font-stretch: 85%; font-weight: 700; line-height: 1.05; letter-spacing: -0.01em; }
+h2 { font-size: 24px; font-stretch: 85%; font-weight: 700; }
+h3 { font-size: 15px; font-weight: 600; font-stretch: 100%; }
+p { margin: 0; max-width: 68ch; }
+.eyebrow { font: 500 12px/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.lede { color: var(--muted); font-size: 17px; }
+header { display: grid; gap: 16px; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1px; background: var(--rule); border: 1px solid var(--rule); }
+.stat { background: var(--panel); padding: 14px 16px; display: grid; gap: 4px; align-content: start; }
+.stat b { font: 500 26px/1.1 var(--mono); font-variant-numeric: tabular-nums; }
+.stat span { color: var(--muted); font-size: 13px; line-height: 1.4; }
+.pass { color: var(--good); font: 600 12px var(--mono); letter-spacing: 0.04em; }
+section { display: grid; gap: 20px; }
+.section-head { display: grid; gap: 8px; border-top: 2px solid var(--ink); padding-top: 14px; }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 28px; }
+figure { margin: 0; display: grid; gap: 8px; min-width: 0; }
+figcaption { color: var(--muted); font-size: 13px; }
+.chart { position: relative; width: 100%; }
+.chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.chart text { fill: var(--muted); font: 11px var(--mono); }
+.chart .strong { fill: var(--ink); }
+.tip { position: absolute; pointer-events: none; background: var(--ink); color: var(--bg); font: 12px/1.45 var(--mono); padding: 6px 9px; border-radius: 4px; white-space: nowrap; transform: translate(-50%, calc(-100% - 10px)); z-index: 2; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13px; color: var(--muted); }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
+.controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.seg { display: inline-flex; border: 1px solid var(--rule); border-radius: 6px; overflow: hidden; background: var(--panel); flex-wrap: wrap; }
+.seg button { font: 500 13px var(--body); color: var(--muted); background: none; border: 0; padding: 7px 14px; cursor: pointer; }
+.seg button + button { border-left: 1px solid var(--rule); }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
+.seg button:focus-visible, .toggle:focus-visible { outline: 2px solid var(--s1); outline-offset: 2px; }
+.regime-note { color: var(--muted); font-size: 13px; }
+.table-wrap { overflow-x: auto; border: 1px solid var(--rule); background: var(--panel); }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { padding: 8px 12px; text-align: right; border-bottom: 1px solid var(--rule); white-space: nowrap; }
+th { font: 500 11px var(--mono); letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); }
+th:first-child, td:first-child { text-align: left; }
+td { font-variant-numeric: tabular-nums; }
+td.num { font-family: var(--mono); }
+tr:last-child td { border-bottom: 0; }
+.chip { display: inline-block; font: 500 11px var(--mono); padding: 1px 7px; border-radius: 99px; border: 1px solid currentColor; }
+.chip.best { color: var(--good); }
+.dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 8px; }
+.toggle { font: 500 12px var(--mono); color: var(--muted); background: none; border: 1px solid var(--rule); border-radius: 4px; padding: 4px 9px; cursor: pointer; justify-self: start; }
+.notes { display: grid; gap: 10px; color: var(--muted); font-size: 14px; }
+.notes b { color: var(--ink); font-weight: 600; }
+footer { color: var(--faint); font-size: 12px; border-top: 1px solid var(--rule); padding-top: 14px; }
+@media (prefers-reduced-motion: no-preference) { .seg button { transition: background .15s, color .15s; } }
+</style>
+
+<div class="page">
+  <header>
+    <div class="eyebrow">NYC TLC · HV0003 · Manhattan · Jan 2024 weekdays · 12:00–18:00</div>
+    <h1>Which dispatch algorithm should Manhattan run, and how sure can we be?</h1>
+    <p class="lede">A zone-level digital twin of Uber's Manhattan market, validated against held-out days of real trips, used to compare five dispatch algorithms under bootstrap uncertainty in every input model.</p>
+    <div class="stats" id="stats"></div>
+  </header>
+
+  <section id="data">
+    <div class="section-head">
+      <div class="eyebrow">1 · The real data</div>
+      <h2>Demand climbs toward the evening peak, and so do waits</h2>
+      <p class="lede" id="data-lede"></p>
+    </div>
+    <div class="grid2">
+      <figure>
+        <h3>Requests per 15 minutes</h3>
+        <div class="chart" id="demand-chart"></div>
+        <figcaption>Line: mean across the 14 weekdays. Band: the quietest and busiest day in each slot.</figcaption>
+      </figure>
+      <figure>
+        <h3>Mean wait by hour, split into its two parts</h3>
+        <div class="legend"><span><i style="background:var(--s1)"></i>Driver approach</span><span><i style="background:var(--s2)"></i>Rider boarding</span></div>
+        <div class="chart" id="components-chart"></div>
+        <figcaption>NYC records when the driver arrived on scene, so the wait splits into approach and boarding.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section id="validation">
+    <div class="section-head">
+      <div class="eyebrow">2 · Validation</div>
+      <h2>The twin reproduces waits on days it never saw</h2>
+      <p class="lede" id="validation-lede"></p>
+    </div>
+    <div class="grid2">
+      <figure>
+        <h3>Wait quantiles: real held-out days vs simulated</h3>
+        <div class="legend"><span><i style="background:var(--s1)"></i>Real (held-out)</span><span><i style="background:var(--s2)"></i>Simulated twin</span></div>
+        <div class="chart" id="quantile-chart"></div>
+      </figure>
+      <figure>
+        <h3>Supply calibration: KS distance by fleet size and same-zone pickup time</h3>
+        <div class="chart" id="grid-chart"></div>
+        <figcaption>Darker is a closer fit to the calibration days; outlined cells are within the 0.10 threshold. Every fleet of 4,000 or more fits, so wait data sets a floor on supply but not a ceiling.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section id="study">
+    <div class="section-head">
+      <div class="eyebrow">3 · Policy study</div>
+      <h2>How much each algorithm cuts waits, by how many drivers are on the road</h2>
+      <p class="lede">Each policy is tuned with the same search budget and must serve at least as many riders as greedy dispatch. Intervals are 95% bootstrap intervals: trips resampled, every input model refitted, all policies run on identical request streams.</p>
+    </div>
+    <div class="controls">
+      <div class="seg" id="regime-seg" role="group" aria-label="Supply regime"></div>
+      <span class="regime-note" id="regime-note"></span>
+    </div>
+    <figure>
+      <h3>Wait reduction vs greedy dispatch</h3>
+      <div class="chart" id="gain-chart"></div>
+    </figure>
+    <div class="table-wrap"><table id="policy-table"></table></div>
+    <figure>
+      <h3>Wait reduction (%) across every supply regime</h3>
+      <div class="table-wrap"><table id="regime-table"></table></div>
+      <figcaption>Fleet size is the one input the data cannot pin down, so the comparison spans the range it allows, plus a driver shortage below it.</figcaption>
+    </figure>
+  </section>
+
+  <section id="method">
+    <div class="section-head">
+      <div class="eyebrow">4 · How it works</div>
+      <h2>Method in brief</h2>
+    </div>
+    <div class="notes" id="notes"></div>
+  </section>
+
+  <footer id="footer"></footer>
+</div>
+
+<script>
+const DATA = /*__DATA__*/null;
+const POLICY_COLOR = { greedy: "var(--baseline)", batched: "var(--s1)", value_aware: "var(--s2)", fluid_rebalance: "var(--s3)", lookahead_rebalance: "var(--s4)" };
+const SVGNS = "http://www.w3.org/2000/svg";
+const fmt = (v, d = 0) => Number(v).toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
+const secs = v => `${fmt(v)}s`;
+
+function el(tag, attrs = {}, parent) {
+  const node = document.createElementNS(SVGNS, tag);
+  for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
+  if (parent) parent.appendChild(node);
+  return node;
+}
+function text(parent, x, y, str, attrs = {}) {
+  const t = el("text", { x, y, ...attrs }, parent);
+  t.textContent = str;
+  return t;
+}
+function niceMax(v) {
+  const p = Math.pow(10, Math.floor(Math.log10(v)));
+  return Math.ceil(v / p) * p;
+}
+function chartShell(id, w, h) {
+  const host = document.getElementById(id);
+  host.innerHTML = "";
+  const svg = el("svg", { viewBox: `0 0 ${w} ${h}`, role: "img" }, host);
+  const tip = document.createElement("div");
+  tip.className = "tip"; tip.hidden = true; host.appendChild(tip);
+  const show = (evt, html) => {
+    const r = host.getBoundingClientRect();
+    const x = (evt.touches ? evt.touches[0].clientX : evt.clientX) - r.left;
+    const y = (evt.touches ? evt.touches[0].clientY : evt.clientY) - r.top;
+    tip.innerHTML = html; tip.hidden = false;
+    tip.style.left = `${Math.min(Math.max(x, 70), r.width - 70)}px`; tip.style.top = `${y}px`;
+  };
+  const hide = () => { tip.hidden = true; };
+  return { svg, show, hide };
+}
+function yAxis(svg, m, w, h, max, ticks, label) {
+  for (let i = 0; i <= ticks; i++) {
+    const v = max * i / ticks, y = m.t + (h - m.t - m.b) * (1 - i / ticks);
+    el("line", { x1: m.l, x2: w - m.r, y1: y, y2: y, stroke: "var(--grid)", "stroke-width": 1 }, svg);
+    text(svg, m.l - 8, y + 4, fmt(v), { "text-anchor": "end" });
+  }
+  if (label) text(svg, m.l, m.t - 10, label);
+}
+
+function renderStats() {
+  const s = DATA.eda.summary, v = DATA.validation;
+  const best = bestAcrossRegimes();
+  const items = [
+    [fmt(s.trips), `real trips across ${s.days} weekdays and ${s.zones} zones`],
+    [v.wait_ks_distance.toFixed(3), `held-out wait KS distance, threshold 0.10 <span class="pass">PASS</span>`],
+    [secs(s.median_wait_s), `median real wait: ${secs(s.median_approach_s)} approach + ${secs(s.median_boarding_s)} boarding`],
+  ];
+  if (best) items.push([`${fmt(best.pct, 1)}%`, `largest wait cut vs greedy: ${DATA.labels[best.policy]}, ${best.regime} supply`]);
+  document.getElementById("stats").innerHTML = items.map(([b, span]) => `<div class="stat"><b>${b}</b><span>${span}</span></div>`).join("");
+}
+
+function renderDemand() {
+  const rows = DATA.eda.demand, W = 520, H = 250, m = { l: 48, r: 12, t: 24, b: 30 };
+  const { svg, show, hide } = chartShell("demand-chart", W, H);
+  const max = niceMax(Math.max(...rows.map(r => r.max)));
+  yAxis(svg, m, W, H, max, 4, "requests");
+  const x = i => m.l + (W - m.l - m.r) * i / (rows.length - 1);
+  const y = v => m.t + (H - m.t - m.b) * (1 - v / max);
+  const band = rows.map((r, i) => `${x(i)},${y(r.max)}`).concat(rows.map((r, i) => `${x(i)},${y(r.min)}`).reverse());
+  el("polygon", { points: band.join(" "), fill: "var(--band)" }, svg);
+  el("polyline", { points: rows.map((r, i) => `${x(i)},${y(r.mean)}`).join(" "), fill: "none", stroke: "var(--s1)", "stroke-width": 2 }, svg);
+  rows.forEach((r, i) => { if (i % 4 === 0) text(svg, x(i), H - 8, r.slot, { "text-anchor": "middle" }); });
+  const cross = el("line", { y1: m.t, y2: H - m.b, stroke: "var(--faint)", "stroke-width": 1, visibility: "hidden" }, svg);
+  const marker = el("circle", { r: 4.5, fill: "var(--s1)", stroke: "var(--panel)", "stroke-width": 2, visibility: "hidden" }, svg);
+  const hit = el("rect", { x: m.l, y: m.t, width: W - m.l - m.r, height: H - m.t - m.b, fill: "transparent" }, svg);
+  const move = evt => {
+    const box = svg.getBoundingClientRect();
+    const px = ((evt.touches ? evt.touches[0].clientX : evt.clientX) - box.left) * W / box.width;
+    const i = Math.max(0, Math.min(rows.length - 1, Math.round((px - m.l) / (W - m.l - m.r) * (rows.length - 1))));
+    const r = rows[i];
+    cross.setAttribute("x1", x(i)); cross.setAttribute("x2", x(i)); cross.setAttribute("visibility", "visible");
+    marker.setAttribute("cx", x(i)); marker.setAttribute("cy", y(r.mean)); marker.setAttribute("visibility", "visible");
+    show(evt, `${r.slot}<br>mean ${fmt(r.mean)} · range ${fmt(r.min)}–${fmt(r.max)}`);
+  };
+  hit.addEventListener("mousemove", move); hit.addEventListener("touchmove", move, { passive: true });
+  hit.addEventListener("mouseleave", () => { hide(); cross.setAttribute("visibility", "hidden"); marker.setAttribute("visibility", "hidden"); });
+}
+
+function renderComponents() {
+  const rows = DATA.eda.components, W = 520, H = 250, m = { l: 44, r: 8, t: 24, b: 30 };
+  const { svg, show, hide } = chartShell("components-chart", W, H);
+  const max = niceMax(Math.max(...rows.map(r => r.wait)) * 1.1);
+  yAxis(svg, m, W, H, max, 4, "seconds");
+  const slot = (W - m.l - m.r) / rows.length, bw = slot * 0.58;
+  const y = v => m.t + (H - m.t - m.b) * (1 - v / max);
+  rows.forEach((r, i) => {
+    const cx = m.l + slot * (i + 0.5), x0 = cx - bw / 2;
+    const g = el("g", {}, svg);
+    el("rect", { x: x0, y: y(r.approach), width: bw, height: y(0) - y(r.approach), fill: "var(--s1)" }, g);
+    el("rect", { x: x0, y: y(r.approach + r.boarding), width: bw, height: y(r.approach) - y(r.approach + r.boarding) - 2, fill: "var(--s2)", rx: 3 }, g);
+    text(svg, cx, y(r.approach + r.boarding) - 6, secs(r.wait), { "text-anchor": "middle", class: "strong" });
+    text(svg, cx, H - 8, `${r.hour}:00`, { "text-anchor": "middle" });
+    const hit = el("rect", { x: cx - slot / 2, y: m.t, width: slot, height: H - m.t - m.b, fill: "transparent" }, svg);
+    hit.addEventListener("mousemove", e => show(e, `${r.hour}:00–${r.hour + 1}:00<br>approach ${secs(r.approach)} · boarding ${secs(r.boarding)}<br>${fmt(r.trips)} trips`));
+    hit.addEventListener("mouseleave", hide);
+  });
+}
+
+function renderQuantiles() {
+  const q = DATA.validation.quantiles, W = 520, H = 250, m = { l: 44, r: 8, t: 24, b: 30 };
+  const { svg, show, hide } = chartShell("quantile-chart", W, H);
+  const max = niceMax(Math.max(...q.map(r => Math.max(r.held_out_wait, r.simulated_wait))) * 1.1);
+  yAxis(svg, m, W, H, max, 4, "seconds");
+  const slot = (W - m.l - m.r) / q.length;
+  const y = v => m.t + (H - m.t - m.b) * (1 - v / max);
+  q.forEach((r, i) => {
+    const cx = m.l + slot * (i + 0.5);
+    el("line", { x1: cx - 9, x2: cx + 9, y1: y(r.held_out_wait), y2: y(r.simulated_wait), stroke: "var(--faint)", "stroke-width": 1.5 }, svg);
+    el("circle", { cx: cx - 9, cy: y(r.held_out_wait), r: 5.5, fill: "var(--s1)", stroke: "var(--panel)", "stroke-width": 2 }, svg);
+    el("circle", { cx: cx + 9, cy: y(r.simulated_wait), r: 5.5, fill: "var(--s2)", stroke: "var(--panel)", "stroke-width": 2 }, svg);
+    text(svg, cx, H - 8, `p${Math.round(r.quantile * 100)}`, { "text-anchor": "middle" });
+    const hit = el("rect", { x: cx - slot / 2, y: m.t, width: slot, height: H - m.t - m.b, fill: "transparent" }, svg);
+    hit.addEventListener("mousemove", e => show(e, `p${Math.round(r.quantile * 100)} wait<br>real ${secs(r.held_out_wait)} · simulated ${secs(r.simulated_wait)}`));
+    hit.addEventListener("mouseleave", hide);
+  });
+}
+
+function renderGrid() {
+  const g = DATA.validation.grid;
+  const fleets = [...new Set(g.map(r => r.fleet_size))].sort((a, b) => a - b);
+  const meds = [...new Set(g.map(r => r.intra_zone_median_seconds))].sort((a, b) => a - b);
+  const W = 520, H = 290, m = { l: 44, r: 4, t: 8, b: 40 };
+  const { svg, show, hide } = chartShell("grid-chart", W, H);
+  const cw = (W - m.l - m.r) / fleets.length, ch = (H - m.t - m.b) / meds.length;
+  const ramp = ["#cde2fb", "#9ec5f4", "#6da7ec", "#3987e5", "#256abf", "#184f95", "#0d366b"];
+  g.forEach(r => {
+    const i = fleets.indexOf(r.fleet_size), j = meds.indexOf(r.intra_zone_median_seconds);
+    const fit = Math.max(0, Math.min(0.999, 1 - r.ks_distance));
+    const step = Math.min(ramp.length - 1, Math.floor(fit * ramp.length));
+    const x = m.l + i * cw, y = m.t + j * ch;
+    el("rect", { x: x + 1, y: y + 1, width: cw - 2, height: ch - 2, fill: ramp[step], rx: 2 }, svg);
+    if (r.ks_distance <= 0.10) el("rect", { x: x + 2, y: y + 2, width: cw - 4, height: ch - 4, fill: "none", stroke: "var(--s4)", "stroke-width": 2, rx: 2 }, svg);
+    const t = text(svg, x + cw / 2, y + ch / 2 + 4, r.ks_distance.toFixed(2), { "text-anchor": "middle" });
+    t.style.fill = step >= 4 ? "#ffffff" : "#15181a";
+    t.style.fontSize = "9.5px";
+    const hit = el("rect", { x, y, width: cw, height: ch, fill: "transparent" }, svg);
+    hit.addEventListener("mousemove", e => show(e, `${fmt(r.fleet_size)} vehicles · ${r.intra_zone_median_seconds}s same-zone pickup<br>KS ${r.ks_distance.toFixed(3)}`));
+    hit.addEventListener("mouseleave", hide);
+  });
+  fleets.forEach((f, i) => { if (i % 2 === 0 || fleets.length < 8) text(svg, m.l + (i + 0.5) * cw, H - 22, fmt(f), { "text-anchor": "middle" }); });
+  text(svg, m.l + (W - m.l - m.r) / 2, H - 4, "fleet size (vehicles)", { "text-anchor": "middle" });
+  meds.forEach((v, j) => text(svg, m.l - 6, m.t + (j + 0.5) * ch + 4, `${v}s`, { "text-anchor": "end" }));
+}
+
+const REGIMES = () => DATA.regime_order.filter(r => DATA.studies[r]);
+function pctGain(study, name) {
+  const ref = study.policies.find(p => p.policy === "greedy").mean_wait_seconds;
+  const p = study.policies.find(q => q.policy === name);
+  return { pct: 100 * p.gain_vs_reference_seconds / ref, lo: 100 * p.gain_vs_reference_ci[0] / ref, hi: 100 * p.gain_vs_reference_ci[1] / ref };
+}
+function bestAcrossRegimes() {
+  let best = null;
+  for (const regime of REGIMES()) {
+    const s = DATA.studies[regime];
+    for (const p of s.policies) {
+      if (p.policy === "greedy") continue;
+      const g = pctGain(s, p.policy);
+      if (!best || g.pct > best.pct) best = { regime, policy: p.policy, pct: g.pct };
+    }
+  }
+  return best;
+}
+
+function renderGain(regime) {
+  const s = DATA.studies[regime];
+  const names = DATA.policy_order.filter(n => n !== "greedy");
+  const gains = names.map(n => ({ n, ...pctGain(s, n) }));
+  const W = 1000, rowH = 44, m = { l: 290, r: 90, t: 16, b: 36 }, H = m.t + m.b + rowH * names.length;
+  const { svg, show, hide } = chartShell("gain-chart", W, H);
+  const lo = Math.min(0, ...gains.map(g => g.lo)), hi = Math.max(...gains.map(g => g.hi));
+  const span = niceMax(Math.max(Math.abs(lo), hi) * 1.1);
+  const min = lo < 0 ? -span : 0, max = span;
+  const x = v => m.l + (W - m.l - m.r) * (v - min) / (max - min);
+  for (let i = 0; i <= 4; i++) {
+    const v = min + (max - min) * i / 4;
+    el("line", { x1: x(v), x2: x(v), y1: m.t, y2: H - m.b, stroke: "var(--grid)" }, svg);
+    text(svg, x(v), H - m.b + 18, `${fmt(v)}%`, { "text-anchor": "middle" });
+  }
+  el("line", { x1: x(0), x2: x(0), y1: m.t, y2: H - m.b, stroke: "var(--baseline)", "stroke-width": 1.5 }, svg);
+  text(svg, x(0) + 6, m.t + 10, "greedy", {});
+  gains.forEach((g, i) => {
+    const cy = m.t + rowH * (i + 0.5);
+    text(svg, m.l - 14, cy + 4, DATA.labels[g.n], { "text-anchor": "end", class: "strong", style: "font-family: var(--body); font-size: 13px" });
+    el("line", { x1: x(g.lo), x2: x(g.hi), y1: cy, y2: cy, stroke: POLICY_COLOR[g.n], "stroke-width": 2.5, "stroke-linecap": "round" }, svg);
+    el("circle", { cx: x(g.pct), cy, r: 6.5, fill: POLICY_COLOR[g.n], stroke: "var(--panel)", "stroke-width": 2 }, svg);
+    text(svg, x(g.hi) + 10, cy + 4, `${fmt(g.pct, 1)}%`, { class: "strong" });
+    const hit = el("rect", { x: 0, y: cy - rowH / 2, width: W, height: rowH, fill: "transparent" }, svg);
+    hit.addEventListener("mousemove", e => show(e, `${DATA.labels[g.n]}<br>${fmt(g.pct, 1)}% shorter waits (95% CI ${fmt(g.lo, 1)}–${fmt(g.hi, 1)}%)`));
+    hit.addEventListener("mouseleave", hide);
+  });
+}
+
+function renderPolicyTable(regime) {
+  const s = DATA.studies[regime];
+  const head = `<tr><th>Policy</th><th>Mean wait</th><th>95% CI</th><th>Riders served</th><th>Ranked first</th><th>Worth in cars</th></tr>`;
+  const rows = DATA.policy_order.map(name => {
+    const p = s.policies.find(q => q.policy === name);
+    const worth = s.vehicles_worth[name];
+    const best = name === s.best_policy ? ` <span class="chip best">best</span>` : "";
+    const worthText = name === "greedy" ? "—" : `${worth.fraction_draws_lower_bound > 0 ? "≥ " : ""}${fmt(worth.vehicles_worth_mean)}`;
+    return `<tr><td><span class="dot" style="background:${POLICY_COLOR[name]}"></span>${DATA.labels[name]}${best}</td>
+      <td class="num">${secs(p.mean_wait_seconds)}</td>
+      <td class="num">${secs(p.mean_wait_ci[0])}–${secs(p.mean_wait_ci[1])}</td>
+      <td class="num">${fmt(100 * p.fraction_served, 1)}%</td>
+      <td class="num">${fmt(100 * p.probability_ranked_first)}%</td>
+      <td class="num">${worthText}</td></tr>`;
+  }).join("");
+  document.getElementById("policy-table").innerHTML = `<thead>${head}</thead><tbody>${rows}</tbody>`;
+  document.getElementById("regime-note").textContent =
+    `${fmt(s.fleet_size)} cars · ${s.n_bootstrap} bootstrap draws × ${s.n_replications} replications · statistically tied with the best: ${s.indifference_set.map(n => DATA.labels[n]).join(", ")}`;
+}
+
+function renderRegimeTable() {
+  const regimes = REGIMES();
+  const head = `<tr><th>Policy</th>${regimes.map(r => `<th>${r} · ${fmt(DATA.studies[r].fleet_size)}</th>`).join("")}</tr>`;
+  const body = DATA.policy_order.filter(n => n !== "greedy").map(n => `<tr><td><span class="dot" style="background:${POLICY_COLOR[n]}"></span>${DATA.labels[n]}</td>${
+    regimes.map(r => { const g = pctGain(DATA.studies[r], n); return `<td class="num">${fmt(g.pct, 1)}% <span style="color:var(--faint)">(${fmt(g.lo, 1)}–${fmt(g.hi, 1)})</span></td>`; }).join("")}</tr>`).join("");
+  const greedyRow = `<tr><td><span class="dot" style="background:var(--baseline)"></span>Greedy mean wait</td>${regimes.map(r => `<td class="num">${secs(DATA.studies[r].policies.find(p => p.policy === "greedy").mean_wait_seconds)}</td>`).join("")}</tr>`;
+  document.getElementById("regime-table").innerHTML = `<thead>${head}</thead><tbody>${greedyRow}${body}</tbody>`;
+}
+
+function renderRegimes() {
+  const seg = document.getElementById("regime-seg");
+  const regimes = REGIMES();
+  let current = regimes.includes("tight") ? "tight" : regimes[0];
+  try { const saved = localStorage.getItem("regime"); if (regimes.includes(saved)) current = saved; } catch (e) { /* storage unavailable */ }
+  const select = r => {
+    current = r;
+    try { localStorage.setItem("regime", r); } catch (e) { /* storage unavailable */ }
+    [...seg.children].forEach(b => b.setAttribute("aria-pressed", String(b.dataset.regime === r)));
+    renderGain(r); renderPolicyTable(r);
+  };
+  seg.innerHTML = regimes.map(r => `<button type="button" id="regime-${r}" data-regime="${r}">${r} · ${fmt(DATA.studies[r].fleet_size)} cars</button>`).join("");
+  seg.addEventListener("click", e => { const b = e.target.closest("button"); if (b) select(b.dataset.regime); });
+  select(current);
+}
+
+function renderText() {
+  const s = DATA.eda.summary, v = DATA.validation;
+  document.getElementById("data-lede").textContent =
+    `${fmt(s.trips_per_day)} Uber trips a day start and end in Manhattan between noon and 6pm. The median rider waits ${secs(s.median_wait_s)} and the slowest 10% wait over ${secs(s.p90_wait_s)}; at the 17:00 peak at least ${fmt(s.peak_busy_vehicles)} cars are busy with riders at once.`;
+  document.getElementById("validation-lede").textContent =
+    `Input models are fitted on 10 weekdays, the two unobservable supply parameters are calibrated on those same days, and the twin is then scored once against 4 held-out weekdays: KS distance ${v.wait_ks_distance.toFixed(3)} on wait times (threshold 0.10) and ${v.hour_of_day_cosine.toFixed(3)} cosine similarity on the demand curve (threshold 0.90). The thresholds were fixed before any real-data run.`;
+  const notes = [
+    ["Simulator.", "Event-driven, 69 TLC zones, 5-second dispatch ticks. Demand is a non-homogeneous Poisson process per zone and 15-minute bin; destinations, trip times and boarding delays are fitted from the trips."],
+    ["Algorithms.", "Greedy nearest-vehicle; batched optimal matching (Hungarian); value-aware matching that prices the drop-off zone with a dynamic-programming value function; and two rebalancing layers that move idle cars toward expected (fluid LP) or sampled (Monte Carlo lookahead) demand."],
+    ["Uncertainty.", "Each bootstrap draw resamples the trips, refits every input model and reruns all policies with common random numbers, so differences are paired. A policy is only called better when its interval excludes zero."],
+    ["Scale.", "Exact zone-level reductions (interchangeable vehicles, candidate pruning, a transportation LP for rebalancing) cut a simulated hour from 7.4s to under 1s; the bootstrap ran in parallel on Kaggle."],
+    ["Limits.", "Fleet size is identified only from below; riders' patience is assumed (NYC data has no cancellations); zones are treated as points, which misses the very shortest pickups."],
+  ];
+  document.getElementById("notes").innerHTML = notes.map(([b, t]) => `<p><b>${b}</b> ${t}</p>`).join("");
+  document.getElementById("footer").textContent = `Built from results generated ${DATA.generated}. Data: NYC Taxi & Limousine Commission high-volume FHV trip records.`;
+}
+
+renderStats(); renderText(); renderDemand(); renderComponents(); renderQuantiles(); renderGrid();
+if (REGIMES().length) { renderRegimes(); renderRegimeTable(); } else { document.getElementById("study").hidden = true; }
+</script>

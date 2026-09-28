@@ -51,10 +51,12 @@ def _eda(args: argparse.Namespace) -> None:
 
 
 def _report(args: argparse.Namespace) -> None:
+    from dispatch_eval.studies.dashboard import build_dashboard
     from dispatch_eval.studies.report import build_report
 
     for path in build_report(args.results_dir, args.output_dir):
         print(f"wrote {path}")
+    print(f"wrote {build_dashboard(args.results_dir, args.dashboard)}")
 
 
 def main() -> None:
@@ -83,6 +85,7 @@ def main() -> None:
     report = sub.add_parser("report", help="rebuild all figures from saved results")
     report.add_argument("--results-dir", type=Path, default=Path("results"))
     report.add_argument("--output-dir", type=Path, default=Path("docs/figures"))
+    report.add_argument("--dashboard", type=Path, default=Path("docs/dashboard.html"))
     report.set_defaults(func=_report)
 
     args = parser.parse_args()

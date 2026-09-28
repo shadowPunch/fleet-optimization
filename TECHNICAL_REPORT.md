@@ -169,6 +169,10 @@ src/dispatch_eval/
                              reposition() samples one realization of
                              near-future requests from the arrival model and
                              Hungarian-matches idle vehicles to them directly
+    zone_index.py              exact zone-level reductions every policy uses
+                             (see "Scaling to NYC" below)
+    registry.py                readable policy names, ladder construction,
+                             equal-budget tuning of every tunable rung
   calibration/
     arrivals.py               fit NHPP rates per (zone, day_type, bin);
                              index-of-dispersion diagnostic;
@@ -177,6 +181,9 @@ src/dispatch_eval/
                              (origin, time bin)
     travel_time.py             fit lognormal travel time per (origin, dest, hour)
     fare.py                    fit linear fare ~ distance + duration
+    boarding.py                empirical on-scene → rider-aboard delay (NYC only)
+    pickup.py                  joint grid calibration of the two latent supply
+                             parameters: fleet size × same-zone pickup time
     fleet_size.py               calibrate the one latent quantity that most
                              matters: fleet size, matched to observed
                              wait-time median/p90 (absolute_moment_loss) or
@@ -231,6 +238,15 @@ src/dispatch_eval/
                              aggregation to ward-equivalents, and stripping
                              the request/pickup timestamp split — reports
                              the ranking shift at each rung
+  studies/                      the NYC study, driven by configs/nyc.yaml
+    nyc_data.py                fetch/cache/split the TLC window, clock alignment
+    validation.py              calibrate on 10 days, validate on 4 held-out days
+    policy_study.py            tune + bootstrap-compare the ladder per supply
+                             regime, price gains in vehicles
+    eda.py                      exploratory tables of the real data
+    report.py                   every figure, rebuilt from results/ only
+  cli.py                        `dispatch-eval validate|study|eda|report`
+  tracking.py                   W&B runs (DISPATCH_WANDB=0 disables)
   geo/
     crosswalk.py                C5 prep (geopandas/shapely/pyproj are dev
                              dependencies, not simulator runtime deps):
@@ -256,6 +272,29 @@ end to end from one command, writing every
 rather than just a summary. `run_pipeline()` is factored out for reuse by
 other scripts (e.g. `analysis/decision_currency_run.py`) that need the
 live in-memory result, not just the parquet.
+
+### Scaling to NYC
+
+The synthetic study ran 5 zones and ~40 vehicles; NYC is 69 zones, ~4,000-
+10,000 vehicles and ~38,000 requests per simulated 6-hour window. Three
+exact reductions (verified against brute force in `tests/test_zone_index.py`)
+make that tractable without changing any policy's decisions:
+
+- **Vehicles in one zone are interchangeable** — every cost depends on a
+  vehicle only through its zone. Greedy dispatch searches zones, not
+  vehicles (O(R·Z) instead of O(R·V); identical picks, ties included).
+- **Batched matching keeps at most R candidate vehicles per zone** — an
+  assignment of R requests can never use more — and solves a rectangular
+  instead of a padded V×V assignment problem.
+- **Rebalancing is a zone-level transportation LP** (HiGHS) instead of a
+  vehicle-by-slot assignment; the transportation matrix is totally
+  unimodular, so the LP optimum is integral.
+
+Plus memoized expected travel times, an ordered waiting set in the engine,
+a configurable rebalancing interval (60s for NYC), and process-parallel
+bootstrap draws that reproduce serial results bit-for-bit. Net effect on a
+one-hour NYC run of greedy dispatch: 7.4s → 0.9s; a full 6-hour run of any
+policy takes 4-12s.
 
 ### Design choices worth knowing about
 
@@ -299,14 +338,18 @@ live in-memory result, not just the parquet.
 
 ### The baseline ladder
 
-| Policy | Mechanism |
-|---|---|
-| B0 — reactive nearest-idle | Greedy: each request assigned to the nearest available idle vehicle, no batching. |
-| B1 — batched Hungarian | Globally-optimal bipartite assignment (`scipy.optimize.linear_sum_assignment`) over all waiting requests and idle vehicles within a matching radius, at each dispatch tick. |
-| B2 — value-corrected | B1's assignment cost augmented with a backward-induction value function `C(zone, time_bin)` — expected discounted future idle cost — at the destination; `value_weight=0` recovers B1 exactly. |
-| B3 — fluid zone balancing | B2's dispatch, plus a distinct repositioning mechanism: idle vehicles moved toward each zone's proportional share of expected arrival rate, via the same bipartite-assignment machinery. |
-| B4 — sampling lookahead | B2's dispatch, plus repositioning informed by a one-sample Monte Carlo lookahead over near-future demand. |
-| B5 — clairvoyant bound | Not a deployable policy: an offline, perfect-information upper bound (time-expanded min-cost flow) used to normalize the other four's performance as "fraction of the achievable gap closed," not an absolute number. Uses a pessimistic-pinning approximation (a request's exit point is pinned to its patience deadline, not its true solution-dependent pickup time) — see the module docstring; confirmed to matter via a two-request-chain regression test. |
+Each policy has a readable name (used by the NYC study, the CLI and every
+figure) and a B-code (used by the original synthetic-study outputs);
+`policies/registry.py` maps between them.
+
+| Policy | Name | Mechanism |
+|---|---|---|
+| B0 — reactive nearest-idle | `greedy` | Greedy: each request assigned to the nearest available idle vehicle, no batching. |
+| B1 — batched Hungarian | `batched` | Globally-optimal bipartite assignment (`scipy.optimize.linear_sum_assignment`) over all waiting requests and idle vehicles within a matching radius, at each dispatch tick. |
+| B2 — value-corrected | `value_aware` | B1's assignment cost augmented with a backward-induction value function `C(zone, time_bin)` — expected discounted future idle cost — at the destination; `value_weight=0` recovers B1 exactly. |
+| B3 — fluid zone balancing | `fluid_rebalance` | B2's dispatch, plus a distinct repositioning mechanism: idle vehicles moved toward each zone's proportional share of expected arrival rate, via the same bipartite-assignment machinery. |
+| B4 — sampling lookahead | `lookahead_rebalance` | B2's dispatch, plus repositioning informed by a one-sample Monte Carlo lookahead over near-future demand. |
+| B5 — clairvoyant bound | `oracle_bound` | Not a deployable policy: an offline, perfect-information upper bound (time-expanded min-cost flow) used to normalize the other four's performance as "fraction of the achievable gap closed," not an absolute number. Uses a pessimistic-pinning approximation (a request's exit point is pinned to its patience deadline, not its true solution-dependent pickup time) — see the module docstring; confirmed to matter via a two-request-chain regression test. |
 
 Every tunable hyperparameter (matching radius, value weight, lookahead
 window, dispatch interval) was given an identical, fixed random-search
@@ -617,6 +660,44 @@ Disclosure: a 2×2 smoke test of the pipeline (fleet {3000, 4000} × median
 {90, 150}s, one replication) ran before this note was written and gave a
 held-out KS of 0.097. The grid and thresholds above were already fixed in
 `configs/nyc.yaml` at that point and are not changed in response to it.
+
+#### Validation V2 — result
+
+`uv run dispatch-eval validate` (W&B run `nyc-validation`; output
+`results/nyc_validation.json`). 80-point supply grid on the calibration
+days, then 4 replications at the best point against the 4 held-out days
+(178,948 real trips vs 138,476 simulated completions):
+
+| Check | Threshold | V1 | **V2** |
+|---|---|---|---|
+| Wait-time KS distance | ≤ 0.10 | 0.7355 FAIL | **0.0308 PASS** |
+| Hour-of-day cosine similarity | ≥ 0.90 | 0.9865 PASS | **0.9862 PASS** |
+| Approach-time KS (diagnostic, not pre-registered) | — | — | 0.0763 |
+
+| Wait quantile | p10 | p25 | p50 | p75 | p90 |
+|---|---|---|---|---|---|
+| Real, held-out | 92s | 133s | 187s | 264s | 367s |
+| Simulated | 87s | 128s | 189s | 268s | 379s |
+
+The residual mismatch sits in the fastest pickups: real approach times
+have a longer short tail (p10 36s vs 53s simulated), i.e. drivers who are
+already metres from the rider, which a zone-level model with a single
+same-zone travel distribution cannot represent.
+
+**What the calibration can and cannot identify.** The best grid point,
+(10,000 vehicles, 120s), lies on the grid's upper edge, and the KS
+surface is flat above ~6,500 vehicles (0.058 → 0.052 → 0.050 at 6,500 /
+8,000 / 10,000). Extending the grid on the calibration days only
+(`analysis/nyc/calibration_ridge_check.py`; held-out data untouched) gives
+0.048 at both 12,500 and 16,000. Once supply is plentiful nearly every
+pickup comes from inside the rider's own zone, so waits stop depending on
+fleet size: **wait-time data bounds the fleet from below (every fleet of
+~4,000+ fits within KS 0.10; 3,500 does not) but not from above.** A
+Little's-law count of cars committed to riders (`dispatch-eval eda`)
+gives a floor of ~3,100 busy at the 17:00 peak, consistent with that lower
+bound. The policy study (§5.9) therefore treats fleet size as a latent
+parameter and spans the data-consistent range rather than trusting one
+point.
 
 ### 5.6 C3 — decision currency and B5's clairvoyant bound
 
