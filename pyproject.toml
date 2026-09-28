@@ -12,6 +12,9 @@ dependencies = [
     "numpy>=2.1",
     "scipy>=1.14",
     "networkx>=3.3",
+    "wandb>=0.30.0",
+    "pyyaml>=6.0.3",
+    "matplotlib>=3.11.2",
 ]
 
 [dependency-groups]
