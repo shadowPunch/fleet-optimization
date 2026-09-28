@@ -34,9 +34,18 @@ study:
   n_replications: 5
   tuning_evaluations: 25  # identical budget for every tunable policy
   tuning_seed: 17
+  # Tuning constraint: serve >= greedy's fraction of riders minus this.
+  service_tolerance: 0.005
+  # Wait-time data bounds supply from below only: every fleet of ~4,000+
+  # reproduces the calibration days at KS <= 0.10 (TECHNICAL_REPORT.md §5.5),
+  # so the study spans that data-consistent range instead of one point.
+  # Same-zone pickup medians are the calibration-grid optimum at each fleet.
   regimes:
-    calibrated: {fleet_scale: 1.0}   # the fleet the validated twin implies
-    shortage: {fleet_scale: 0.8}     # 20% fewer drivers
+    tight: {fleet_size: 4000, intra_zone_median_seconds: 90}
+    mid: {fleet_size: 6500, intra_zone_median_seconds: 120}
+    abundant: {fleet_size: 10000, intra_zone_median_seconds: 120}
+    # Counterfactual below the data-consistent range: 20% fewer drivers than "tight".
+    shortage: {fleet_size: 3200, intra_zone_median_seconds: 90}
   # Greedy dispatch's wait-vs-fleet curve, used to price gains in vehicles.
-  fleet_curve_scales: [0.7, 0.8, 0.9, 1.0, 1.1, 1.2]
+  fleet_curve_scales: [0.8, 0.9, 1.0, 1.15, 1.3, 1.5, 1.75, 2.0]
   fleet_curve_replications: 3

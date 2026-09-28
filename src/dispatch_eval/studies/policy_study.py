@@ -1,11 +1,14 @@
 """The NYC dispatch policy study: which algorithm should run, and how sure
 can we be?
 
-For one supply regime (the calibrated fleet, optionally scaled down to model
-a driver shortage):
+For one supply regime (a fleet size within, or below, the range the wait
+data is consistent with):
 
-1. Build the validated NYC twin (`studies.validation`) at the calibrated
-   same-zone pickup time.
+Policies are tuned to minimize mean wait subject to serving no fewer riders
+than greedy dispatch; the experiment then reports both wait and service.
+
+1. Build the validated NYC twin (`studies.validation`) at the regime's
+   fleet size and same-zone pickup time (`configs/nyc.yaml`).
 2. Tune every policy in the ladder with an identical budget (`tune_ladder`).
 3. Run the bootstrap-CRN experiment (`ranking_flip`): resample trips, refit
    every input model, run every policy on identical request streams.
@@ -24,6 +27,7 @@ import polars as pl
 
 from dispatch_eval.calibration.value_function import compute_value_function
 from dispatch_eval.decision_currency import (
+    DecisionCurrencyResult,
     build_fleet_wait_curve,
     decision_currency,
     mean_fare_per_trip,
@@ -99,6 +103,36 @@ def summarize(result: RankingFlipResult, reference: str = REFERENCE_POLICY) -> d
     }
 
 
+def paired_vehicles_worth(
+    currency: dict[str, DecisionCurrencyResult], reference: str, curve_max: float
+) -> dict[str, dict]:
+    """Extra vehicles greedy dispatch would need to match each policy.
+
+    Paired per bootstrap draw (policy's fleet-equivalent minus the
+    reference's own, in the same draw) so the offset between the nominal
+    curve and each draw's refitted world cancels. When a policy's wait
+    lies beyond the curve, the fleet-equivalent is clipped to the curve's
+    largest fleet: that draw's figure is a lower bound, and the share of
+    such draws is reported.
+    """
+    ref = currency[reference]
+    ref_fleet = np.minimum(ref.actual_fleet_size + ref.vehicles_worth_per_draw, curve_max)
+    out = {}
+    for name, c in currency.items():
+        fleet = np.minimum(c.actual_fleet_size + c.vehicles_worth_per_draw, curve_max)
+        worth = fleet - ref_fleet
+        mean = float(worth.mean())
+        out[name] = {
+            "vehicles_worth_mean": mean,
+            "vehicles_worth_ci": _interval(worth),
+            "fraction_draws_lower_bound": float(np.mean(
+                c.actual_fleet_size + c.vehicles_worth_per_draw > curve_max
+            )),
+            "delta_driver_hours_mean": mean * c.horizon_hours,
+        }
+    return out
+
+
 def long_table(result: RankingFlipResult, regime: str) -> pl.DataFrame:
     """(regime, policy, bootstrap_draw, replication) -> metrics, one row per cell."""
     served = (result.secondary_metrics or {}).get("fraction_served", {})
@@ -136,8 +170,8 @@ def run_policy_study(
     twin = build_twin(cfg)
     sim = cfg["simulation"]
 
-    intra = (float(np.log(validation["intra_zone_median_seconds"])), validation["intra_zone_sigma"])
-    fleet_size = round(validation["fleet_size"] * regime_cfg["fleet_scale"])
+    intra = (float(np.log(regime_cfg["intra_zone_median_seconds"])), validation["intra_zone_sigma"])
+    fleet_size = regime_cfg["fleet_size"]
     models = twin.models
     models.travel_time = models.travel_time.with_intra_zone(intra)
     horizon = twin.config.horizon_seconds
@@ -157,8 +191,16 @@ def run_policy_study(
             od_bin_minutes=sim["od_bin_minutes"],
         )
 
+        # Mean wait over completed rides alone rewards turning riders away
+        # (a tight pickup radius strands hard requests), so tuning is
+        # constrained: a candidate must serve at least as many riders as
+        # greedy dispatch, within `service_tolerance`.
+        reference = twin.simulate(fleet_size, intra, study["tuning_seed"])
+        min_served = reference.fraction_served - study["service_tolerance"]
+
         def evaluate(policy) -> float:
-            return twin.simulate(fleet_size, intra, study["tuning_seed"], policy).mean_wait_seconds
+            result = twin.simulate(fleet_size, intra, study["tuning_seed"], policy)
+            return result.mean_wait_seconds if result.fraction_served >= min_served else float("inf")
 
         print(f"[{regime}] tuning ({study['tuning_evaluations']} evaluations per policy)...", flush=True)
         params, tuning = tune_ladder(
@@ -166,6 +208,10 @@ def run_policy_study(
             study["tuning_seed"],
         )
         print(f"[{regime}] tuned {params.as_dict()}", flush=True)
+        infeasible = [name for name, t in tuning.items() if not np.isfinite(t.best_score)]
+        if infeasible:
+            print(f"[{regime}] WARNING: no tuning candidate met the service constraint for "
+                  f"{infeasible}; their parameters are arbitrary", flush=True)
         run.log_table(
             "tuning_history",
             [
@@ -230,10 +276,13 @@ def run_policy_study(
             "n_bootstrap": n_bootstrap,
             "n_replications": study["n_replications"],
             "tuned_params": params.as_dict(),
+        "tuning_best_scores": {name: t.best_score for name, t in tuning.items()},
+        "tuning_infeasible": infeasible,
+        "reference_fraction_served": reference.fraction_served,
             "runtime_minutes": (time.time() - started) / 60,
             **summarize(result),
             "fleet_curve": {"fleet_sizes": curve.fleet_sizes, "mean_wait_seconds": curve.mean_wait_seconds},
-            "vehicles_worth": {name: c.summary() for name, c in currency.items()},
+            "vehicles_worth": paired_vehicles_worth(currency, REFERENCE_POLICY, max(curve_sizes)),
         }
         output_dir.mkdir(parents=True, exist_ok=True)
         long_table(result, regime).write_parquet(output_dir / f"nyc_study_{regime}.parquet")

@@ -67,3 +67,21 @@ def test_long_table_has_one_row_per_cell():
     assert table.height == 2 * 50 * 3
     assert set(table.columns) >= {"regime", "policy", "bootstrap_draw", "replication",
                                   "mean_wait_seconds", "fraction_served"}
+
+
+def test_paired_vehicles_worth_cancels_reference_offset_and_flags_clipping():
+    from dispatch_eval.decision_currency import DecisionCurrencyResult
+    from dispatch_eval.studies.policy_study import paired_vehicles_worth
+
+    def currency(name, worth):
+        return DecisionCurrencyResult(name, "greedy", 1000, np.array(worth, dtype=float),
+                                      np.zeros(len(worth), dtype=bool), 6.0, 20.0, 10.0)
+
+    result = paired_vehicles_worth(
+        {"greedy": currency("greedy", [50, 60]), "fast": currency("fast", [250, 900])},
+        "greedy", curve_max=1500,
+    )
+    assert result["greedy"]["vehicles_worth_mean"] == 0.0
+    # draw 0: 1250 - 1050 = 200; draw 1: clipped 1500 - 1060 = 440
+    assert result["fast"]["vehicles_worth_mean"] == pytest.approx(320.0)
+    assert result["fast"]["fraction_draws_lower_bound"] == 0.5
