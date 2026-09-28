@@ -9,3 +9,4 @@ analysis/cache/
 results/
 .claude/
 wandb/
+dist/
