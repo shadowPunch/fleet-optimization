@@ -29,7 +29,9 @@ class _NullRun:
     """Stand-in with the subset of the wandb Run API this project uses."""
 
     name = "untracked"
-    summary: dict[str, Any] = {}
+
+    def __init__(self) -> None:
+        self.summary: dict[str, Any] = {}
 
     def log(self, *_args: Any, **_kwargs: Any) -> None: ...
 
