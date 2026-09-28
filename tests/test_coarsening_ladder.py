@@ -9,8 +9,10 @@ import pytest
 from dispatch_eval.coarsening_ladder import (
     CoarseningRung,
     apply_coarsening,
+    coarsen_aggregate_zones,
     coarsen_destroy_od_correlation,
     coarsen_fare_distance_to_od_mean,
+    coarsen_strip_request_pickup_split,
     ranking_shift_summary,
     run_coarsening_ladder,
 )
@@ -88,6 +90,40 @@ def test_destroy_od_correlation_breaks_perfect_origin_dest_pairing():
     assert not (x_dests == "Y").all()  # perfect pairing should not survive a real shuffle
 
 
+# --- coarsen_aggregate_zones ----------------------------------------------------
+
+
+def test_coarsen_aggregate_zones_collapses_via_the_map():
+    df = _tiny_trip_df()  # origin A,A,B,B / dest B,B,A,A
+    out = coarsen_aggregate_zones(df, {"A": "W1", "B": "W1"})
+    assert set(out["origin_zone"].to_list()) == {"W1"}
+    assert set(out["dest_zone"].to_list()) == {"W1"}
+
+
+def test_coarsen_aggregate_zones_leaves_other_columns_untouched():
+    df = _tiny_trip_df()
+    out = coarsen_aggregate_zones(df, {"A": "W1", "B": "W2"})
+    assert out["fare"].to_list() == df["fare"].to_list()
+    assert out["trip_id"].to_list() == df["trip_id"].to_list()
+
+
+# --- coarsen_strip_request_pickup_split -----------------------------------------
+
+
+def test_strip_request_pickup_split_drops_incomplete_trips():
+    df = _tiny_trip_df()  # 3 completed, 1 cancelled
+    out = coarsen_strip_request_pickup_split(df)
+    assert out.height == 3
+    assert set(out["status"].to_list()) == {"completed"}
+
+
+def test_strip_request_pickup_split_overwrites_request_ts_with_pickup_ts():
+    later_ts = datetime(2026, 1, 1, 8, 5, 0)
+    df = _tiny_trip_df().with_columns(pl.Series("pickup_ts", [later_ts] * 4))
+    out = coarsen_strip_request_pickup_split(df)
+    assert (out["request_ts"] == later_ts).all()
+
+
 # --- apply_coarsening ----------------------------------------------------------
 
 
@@ -152,3 +188,37 @@ def test_run_coarsening_ladder_end_to_end(trips_df):
     for rung_summary in summary.values():
         probs = rung_summary["probability_ranked_first"]
         assert sum(probs.values()) == pytest.approx(1.0)
+
+
+def test_run_coarsening_ladder_with_zone_map_and_policy_override(trips_df):
+    """A rung with `zone_map` must run against its own smaller zone list
+    (not silently inherit the fine one), and `policies_by_rung` must
+    actually be used for that rung instead of the shared `policies` dict
+    -- both required whenever a rung relabels the geography under a
+    policy carrying zone-keyed state (a value function, in the real
+    Bengaluru-grade rung this exists for).
+    """
+    fine_policies = {"B0": NearestIdlePolicy(), "B1": BatchedHungarianPolicy()}
+    ward_policies = {"B0": NearestIdlePolicy(), "B1": BatchedHungarianPolicy(matching_radius_seconds=500.0)}
+    config = StudyConfig(zones=ZONES, day_type="all", horizon_seconds=6 * 3600.0)
+    abandonment_model = AbandonmentModel(mean_patience_seconds=300.0)
+
+    rungs = [
+        CoarseningRung("fine", bin_minutes=15, od_time_bin_minutes=60,
+                        destroy_od_correlation=False, coarsen_fare_distance=False),
+        CoarseningRung("ward", bin_minutes=15, od_time_bin_minutes=60,
+                        destroy_od_correlation=False, coarsen_fare_distance=False,
+                        zone_map={"A": "W1", "B": "W1", "C": "W2"}),
+    ]
+
+    results = run_coarsening_ladder(
+        trips_df, ZONES, fine_policies, fleet_size=15, abandonment_model=abandonment_model,
+        config=config, n_bootstrap=2, n_replications=2, seed=9, rungs=rungs,
+        policies_by_rung={"ward": ward_policies},
+    )
+
+    assert set(results.keys()) == {"fine", "ward"}
+    # the ward rung ran against its own 2-element zone list, not the fine 3-element one
+    assert set(results["ward"].policy_names) == {"B0", "B1"}
+    for name in results["ward"].policy_names:
+        assert results["ward"].metric_by_policy[name].shape == (2, 2)

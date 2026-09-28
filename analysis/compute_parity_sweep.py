@@ -1,6 +1,6 @@
 """C4 — empirical decision-latency sweep across the B0-B4 baseline ladder.
 
-No real data needed (see README's "C4 doesn't need real data" note) — this
+No real data needed — this
 uses synthetic-but-representative fitted models (same pattern as every
 other test in this project) purely to build well-formed policy instances
 (a real `ValueFunction`, a real `NHPPArrivalModel` with nonzero rates for

@@ -1,6 +1,6 @@
 """Build the C5 ward-boundary crosswalk: 2011 Census wards -> 2025 GBA wards.
 
-See docs/census_bbmp_data.md for the full background. In short: the only
+See TECHNICAL_REPORT.md for the full background. In short: the only
 usable ward-level demographic data for Bengaluru is tied to the ~198-ward
 geometry the 2011 Census was tabulated against, but Namma Yatri's open data
 almost certainly reports against the current 369-ward Greater Bengaluru
@@ -23,7 +23,7 @@ Two things this script establishes, not assumed going in:
    within each of the 5 city corporations (East/West/Central/North/South).
    The unique target key used throughout is `Corporation-ward_id`.
 
-Data sources (all public, no auth, see docs/census_bbmp_data.md for URLs):
+Data sources (all public, no auth, see TECHNICAL_REPORT.md for URLs):
   - Census 2011 ward CSV: OpenCity "Bengaluru Ward-wise Census Data 2011"
   - 2011-era ward geometry (198 wards): Datameet Municipal_Spatial_Data,
     BBMP_oldWards.geojson — geometry only; its own embedded POP_TOTAL does
@@ -34,7 +34,7 @@ Data sources (all public, no auth, see docs/census_bbmp_data.md for URLs):
 
 Usage: uv run python analysis/ward_crosswalk.py
 (expects the four files above already downloaded into analysis/cache/ —
-see docs/census_bbmp_data.md for exact URLs; not auto-fetched by this
+see TECHNICAL_REPORT.md for exact URLs; not auto-fetched by this
 script because the KML source requires following OpenCity's dataset page
 rather than a stable direct link)
 """
@@ -175,7 +175,7 @@ def main() -> None:
     for path in (CENSUS_CSV, OLD_WARDS_GEOJSON, GBA_WARDS_KML):
         if not path.exists():
             raise SystemExit(
-                f"Missing required input: {path}. See docs/census_bbmp_data.md for download URLs."
+                f"Missing required input: {path}. See TECHNICAL_REPORT.md for download URLs."
             )
 
     print("Building areal-interpolation crosswalk (2011 wards -> 369 GBA wards)...")

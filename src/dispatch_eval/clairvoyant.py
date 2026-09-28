@@ -101,8 +101,8 @@ were this module's own bugs.
 This solver's input is a fixed, already-realized list of requests — how
 that list gets generated (and whether it's the *same* realized trace across
 different policies, which the "gap closed" comparison requires) is entirely
-the caller's responsibility. See the README's note on the engine's current
-random-number handling before wiring this into a cross-policy comparison.
+the caller's responsibility. See TECHNICAL_REPORT.md's note on the CRN fix
+before wiring this into a cross-policy comparison.
 `ranking_flip.run_ranking_flip_experiment(..., compute_clairvoyant=True)`
 does exactly this correctly (same-seed scenario reproduction, see its own
 docstring) — that's the intended way to use this module for a real

@@ -1,18 +1,18 @@
 """The single entrypoint that reproduces the confirmatory study end to end.
 
-Per the project plan's reproducibility-discipline requirement: *"store
-(policy, θ_bootstrap_index, replication_seed) → metrics in a single
-parquet results table; never recompute a headline number from a notebook
-cell. One run_study.py that regenerates every figure from raw data."*
-Flagged as not yet built in `docs/pre_registration.md`; this is that.
+Reproducibility discipline: store (policy, θ_bootstrap_index,
+replication_seed) → metrics in a single parquet results table; never
+recompute a headline number from a notebook cell. One run_study.py that
+regenerates every figure from raw data.
 
-Pipeline, all against `docs/pre_registration.md`'s committed settings
-(primary metric = mean wait, α = 0.05, n_bootstrap ≥ 40):
+Pipeline, all against the pre-registered settings documented in
+`TECHNICAL_REPORT.md` §4 (primary metric = mean wait, α = 0.05,
+n_bootstrap ≥ 40):
 
 1. Load trip data (synthetic — no real Delhi NCR/Bengaluru trip-level data
-   has been available in this environment; see README's data-status
-   section. `--data-source` exists as a switch for when that changes, not
-   because a real path is implemented yet).
+   has been available in this environment; see `TECHNICAL_REPORT.md` §2.
+   `--data-source` exists as a switch for when that changes, not because a
+   real path is implemented yet).
 2. Fit nominal input models and calibrate fleet size against the observed
    wait-time distribution (P1).
 3. Tune B1-B4 with an identical evaluation budget (P2 parity condition),
@@ -61,7 +61,7 @@ ZONES = ["A", "B", "C", "D", "E"]
 HORIZON_SECONDS = 6 * 3600.0
 MEAN_PATIENCE_SECONDS = 300.0  # one point from the pre-registered sweep {60,180,300,600,900}
 N_TUNING_EVALUATIONS = 25
-CANDIDATE_FLEET_SIZES = [10, 15, 20, 25, 30, 40, 50, 60]
+CANDIDATE_FLEET_SIZES = [10, 15, 20, 25, 30, 40, 50, 60, 75, 90]
 BASELINE_POLICY = "B0_nearest_idle"
 
 
@@ -143,19 +143,16 @@ def flatten_to_long_table(result, seed: int) -> pl.DataFrame:
     return pl.DataFrame(rows)
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--n-bootstrap", type=int, default=40)  # pre-registered minimum
-    parser.add_argument("--n-replications", type=int, default=4)
-    parser.add_argument("--seed", type=int, default=2026)
-    parser.add_argument("--output", type=Path, default=Path("results/study_results.parquet"))
-    parser.add_argument(
-        "--data-source", choices=["synthetic"], default="synthetic",
-        help="Only 'synthetic' is implemented — no real trip-level data has been available in this environment.",
-    )
-    args = parser.parse_args()
-
-    print(f"[{datetime.now().isoformat(timespec='seconds')}] Loading data ({args.data_source})...")
+def run_pipeline(n_bootstrap: int, n_replications: int, seed: int):
+    """Steps 1-4 of the module docstring's pipeline, factored out of `main()`
+    so other scripts (e.g. `analysis/decision_currency_run.py`, C3) can run
+    the exact same confirmatory study in-memory and consume the live
+    `RankingFlipResult` directly, instead of re-deriving it from the
+    flattened parquet `main()` writes — matching this project's own
+    "never recompute a headline number from a notebook cell" principle.
+    Returns `(result, models, abandonment_model, fleet_calibration, trips_df)`.
+    """
+    print(f"[{datetime.now().isoformat(timespec='seconds')}] Loading data (synthetic)...")
     trips_df = generate_synthetic_trips(
         n_days=10, zones=ZONES, start_date=datetime(2026, 1, 5), fleet_size=60, seed=5
     )
@@ -181,25 +178,46 @@ def main() -> None:
         return result.wait_times
 
     fleet_calibration = calibrate_fleet_size(observed_wait_seconds, simulate_fn, CANDIDATE_FLEET_SIZES)
-    print(f"  calibrated fleet_size={fleet_calibration.fleet_size} (loss={fleet_calibration.loss:.1f})")
+    print(f"  calibrated fleet_size={fleet_calibration.fleet_size} (loss={fleet_calibration.loss:.1f}, "
+          f"hit_boundary={fleet_calibration.hit_boundary})")
+    if fleet_calibration.hit_boundary:
+        print("  WARNING: calibration hit the edge of CANDIDATE_FLEET_SIZES -- not a converged optimum.")
 
     print(f"Tuning B1-B4 ({N_TUNING_EVALUATIONS} evaluations each, identical budget — P2)...")
     policies = tune_policies(models, value_function, abandonment_model)
 
     print(
         f"Running the bootstrap-CRN ranking-flip experiment "
-        f"(B={args.n_bootstrap}, R={args.n_replications}, seed={args.seed} — P3 + B5)..."
+        f"(B={n_bootstrap}, R={n_replications}, seed={seed} — P3 + B5)..."
     )
     config = StudyConfig(zones=ZONES, day_type="all", horizon_seconds=HORIZON_SECONDS)
     result = run_ranking_flip_experiment(
         trips_df, ZONES, policies, fleet_calibration.fleet_size, abandonment_model, config,
-        args.n_bootstrap, args.n_replications, args.seed, compute_clairvoyant=True,
+        n_bootstrap, n_replications, seed, compute_clairvoyant=True,
         # 15.0 (the function's own default) drops the large majority of
         # requests as "unservable" purely from rounding at this project's
         # mean_patience_seconds=300 -- see clairvoyant.py's module
         # docstring. 1.0 is tractable here specifically because this
         # script uses 5 zones.
         clairvoyant_bin_minutes=1.0,
+    )
+    return result, models, abandonment_model, fleet_calibration, trips_df
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--n-bootstrap", type=int, default=40)  # pre-registered minimum
+    parser.add_argument("--n-replications", type=int, default=4)
+    parser.add_argument("--seed", type=int, default=2026)
+    parser.add_argument("--output", type=Path, default=Path("results/study_results.parquet"))
+    parser.add_argument(
+        "--data-source", choices=["synthetic"], default="synthetic",
+        help="Only 'synthetic' is implemented — no real trip-level data has been available in this environment.",
+    )
+    args = parser.parse_args()
+
+    result, _models, _abandonment_model, _fleet_calibration, _trips_df = run_pipeline(
+        args.n_bootstrap, args.n_replications, args.seed
     )
 
     table = flatten_to_long_table(result, args.seed)

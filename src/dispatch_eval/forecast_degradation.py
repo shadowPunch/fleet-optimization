@@ -16,7 +16,7 @@ actually cluster; a point travel-time estimate where duration is actually
 heavy-tailed). Two consequences follow directly from this, neither
 established until measured here:
 
-- The finding in `docs/indifference_search.md` — four separate rigorous
+- The finding in `TECHNICAL_REPORT.md` — four separate rigorous
   comparisons, zero indifference between *mechanisms* (B0 vs. B1 vs.
   B2-B4), only within one (B2's own `value_weight`) — is consistent with
   "these mechanisms genuinely differ this much" but equally consistent
@@ -28,7 +28,7 @@ established until measured here:
   smoothed-OD / lognormal forms every time. Structural misspecification,
   usually the dominant real-world forecast-error term, is exactly zero
   here by construction. Every `input_uncertainty_ratio` reported so far
-  (`docs/mde_scaling_validation.md`, `run_study.py`) is a floor, not an
+  (`TECHNICAL_REPORT.md`, `run_study.py`) is a floor, not an
   estimate — this module supplies the missing third variance component
   the project plan's C1 always specified (intrinsic noise, input-model
   estimation error, *structural ambiguity*) but never built.
@@ -99,7 +99,7 @@ def spatially_uniform_arrival_model(model: NHPPArrivalModel) -> NHPPArrivalModel
     still leaves each zone's own average rate intact. This destroys the
     spatial signal too: a policy using this can't tell a busy zone from a
     quiet one, only the citywide total. Preserves the citywide average
-    rate exactly (`docs/forecast_degradation.md`: the natural follow-up to
+    rate exactly (`TECHNICAL_REPORT.md`: the natural follow-up to
     check whether B2-B4's advantage over reactive baselines survives
     losing "which zone is busier," not just "when" — none of this
     module's other degradations touch that signal).

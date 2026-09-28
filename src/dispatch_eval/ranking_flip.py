@@ -18,7 +18,7 @@ non-negotiable — it's what makes the paired comparison sharp. This module
 gets it for free from two things already fixed/built earlier in the
 project: `scenario.generate_scenario` makes the realized request trace
 depend only on the fitted models and an rng seed, never on which policy is
-running (see the README's note on the CRN bug); and re-seeding a fresh
+running (see TECHNICAL_REPORT.md's note on the CRN bug); and re-seeding a fresh
 `np.random.Generator` with the same value for every policy at a given
 (b, r) makes the *rest* of the randomness (travel-time realizations) shared
 too, up to the point where different policies make different decisions.
@@ -342,13 +342,13 @@ def variance_decomposition(metric_a: np.ndarray, metric_b: np.ndarray) -> dict[s
     ambiguity*, but the bootstrap loop this function's inputs come from
     only ever refits within a fixed, correctly-specified model family
     (NHPP / smoothed-OD / lognormal travel time). Structural
-    misspecification — usually the dominant real-world forecast-error
-    term — is exactly zero here by construction, so `across_theta_variance`
-    (and therefore `input_uncertainty_ratio`) can only be an
-    underestimate of what a real deployment would see. See
-    `forecast_degradation.py` for the (separate, not-yet-integrated-here)
-    tool that makes structural ambiguity checkable at all, and
-    `docs/forecast_degradation.md` for what it found.
+    misspecification is exactly zero here by construction, so
+    `across_theta_variance` (and therefore `input_uncertainty_ratio`) can
+    only be an underestimate of what a real deployment would see. Use this
+    function when only a single-abandonment-spec `RankingFlipResult` is
+    available; `variance_decomposition_three_term` is the real
+    three-term estimate (the abandonment-hazard sweep as the structural
+    stratum), not a floor, when the outer sweep has been run.
     """
     diff = metric_a - metric_b
     within_theta = float(diff.var(axis=1, ddof=1).mean())
@@ -360,6 +360,72 @@ def variance_decomposition(metric_a: np.ndarray, metric_b: np.ndarray) -> dict[s
         "input_uncertainty_ratio": across_theta / within_theta
         if within_theta > 0
         else float("inf"),
+    }
+
+
+def variance_decomposition_three_term(
+    metric_a_by_spec: dict[float, np.ndarray], metric_b_by_spec: dict[float, np.ndarray]
+) -> dict[str, float]:
+    """C1's real three-term split: intrinsic simulation noise /
+    input-model estimation error / structural ambiguity — not a floor.
+
+    `metric_a_by_spec`/`metric_b_by_spec` map each pre-registered
+    abandonment-hazard specification (`mean_patience_seconds`,
+    `TECHNICAL_REPORT.md`: `{60, 180, 300, 600, 900}`, "a structural
+    axis to sweep, not fit") to that spec's own `metric_by_policy` array
+    (shape `(n_bootstrap, n_replications)`) from a `RankingFlipResult` run
+    with that `AbandonmentModel` — the abandonment sweep as the outer loop
+    around the existing bootstrap, one `run_ranking_flip_experiment` call
+    per spec. Both dicts must share the same keys (specs).
+
+    Extends `variance_decomposition`'s nested law-of-total-variance design
+    by one more level, outermost: spec > bootstrap draw > replication.
+    `diff[s, b, r]` is the paired (CRN) metric difference at spec `s`,
+    draw `b`, replication `r`.
+
+    - `intrinsic_variance`: mean, over (spec, draw), of the variance
+      across replications within that cell — same quantity
+      `variance_decomposition` calls `within_theta_variance`, now also
+      averaged over specs.
+    - `input_estimation_variance`: mean, over specs, of the variance
+      across bootstrap draws' own means within that spec — same quantity
+      `variance_decomposition` calls `across_theta_variance`, but now
+      computed *within* a fixed abandonment spec before averaging, so
+      structural ambiguity from *which spec is true* can't leak into it.
+    - `structural_variance`: variance, across specs, of each spec's own
+      overall mean — the term `variance_decomposition` could never
+      produce, because its bootstrap loop only ever refits within one
+      fixed, correctly-specified family. This is what makes
+      `input_uncertainty_ratio` below an actual estimate of input-model
+      estimation error's contribution, not an underestimate that also
+      silently contains uncounted structural ambiguity.
+
+    Doesn't cover every possible structural axis — only the abandonment
+    hazard, the one this project's own P1 pre-registration already commits
+    to treating as unfit/structural. Model-family misspecification
+    (arrival/OD/travel-time functional form) is a separate structural
+    question, checked separately by `forecast_degradation.py`
+    (`TECHNICAL_REPORT.md`) and not folded in here.
+    """
+    specs = sorted(metric_a_by_spec)
+    if sorted(metric_b_by_spec) != specs:
+        raise ValueError("metric_a_by_spec and metric_b_by_spec must share the same spec keys")
+
+    diffs = np.stack([metric_a_by_spec[s] - metric_b_by_spec[s] for s in specs])  # (S, B, R)
+
+    intrinsic = float(diffs.var(axis=2, ddof=1).mean())
+    draw_means = diffs.mean(axis=2)  # (S, B) -- per-(spec, draw) mean across replications
+    input_estimation = float(draw_means.var(axis=1, ddof=1).mean())
+    spec_means = draw_means.mean(axis=1)  # (S,) -- per-spec grand mean
+    structural = float(spec_means.var(ddof=1)) if len(specs) > 1 else 0.0
+
+    return {
+        "intrinsic_variance": intrinsic,
+        "input_estimation_variance": input_estimation,
+        "structural_variance": structural,
+        "total_variance": intrinsic + input_estimation + structural,
+        "input_uncertainty_ratio": input_estimation / intrinsic if intrinsic > 0 else float("inf"),
+        "structural_uncertainty_ratio": structural / intrinsic if intrinsic > 0 else float("inf"),
     }
 
 

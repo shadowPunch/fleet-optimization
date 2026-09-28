@@ -3,7 +3,7 @@
 Source: nammayatri.in/open — real, live, operational data from an actual
 running dispatch platform, aggregated at the ward level. Mirrored as a
 scraped snapshot at `arshdkhan/namma-yatri-bengaluru-ward-wise-ride-open-data`
-on Kaggle. See docs/observability_table.md: this source has no trip-level
+on Kaggle. See TECHNICAL_REPORT.md: this source has no trip-level
 timestamps or OD structure, only per-ward, per-time-window counts — it is
 used for aggregate validation and the C5 demographic join, never as
 simulator input.

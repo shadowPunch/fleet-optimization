@@ -19,6 +19,7 @@ from dispatch_eval.ranking_flip import (
     subset_trips_by_days,
     validate_mde_scaling,
     variance_decomposition,
+    variance_decomposition_three_term,
 )
 from dispatch_eval.simulator.runner import StudyConfig
 from dispatch_eval.sources.synthetic import generate_synthetic_trips
@@ -246,6 +247,60 @@ def test_variance_decomposition_recovers_known_within_and_across_structure():
     assert (
         result["input_uncertainty_ratio"] > 1.0
     )  # across-theta (9) should dominate within-theta (1)
+
+
+def test_variance_decomposition_three_term_recovers_known_structure():
+    # Three nested, independently-controlled signals: structural (across
+    # abandonment specs, sd=5), input-estimation (across bootstrap draws
+    # within a spec, sd=3), intrinsic (across replications, sd=1). Many
+    # more specs than the real 5-spec pre-registered sweep uses -- purely
+    # to make this a tight test of the formula itself; a sample variance
+    # over only 3-5 draws (the real use case) is intrinsically noisy, a
+    # separate, real limitation noted in the analysis script/doc, not
+    # something to paper over by weakening this test's tolerance instead.
+    rng = np.random.default_rng(0)
+    n_bootstrap, n_replications = 100, 20
+    specs = list(range(30))
+    spec_shift = {s: rng.normal(0, 5.0) for s in specs}  # structural signal, sd=5
+
+    metric_a_by_spec, metric_b_by_spec = {}, {}
+    for s in specs:
+        draw_shift = rng.normal(0, 3.0, size=n_bootstrap)  # input-estimation signal, sd=3
+        noise = rng.normal(0, 1.0, size=(n_bootstrap, n_replications))  # intrinsic noise, sd=1
+        diff = spec_shift[s] + draw_shift[:, None] + noise
+        metric_a_by_spec[s] = diff
+        metric_b_by_spec[s] = np.zeros_like(diff)
+
+    result = variance_decomposition_three_term(metric_a_by_spec, metric_b_by_spec)
+    assert result["intrinsic_variance"] == pytest.approx(1.0, rel=0.25)
+    assert result["input_estimation_variance"] == pytest.approx(9.0, rel=0.35)
+    assert result["structural_variance"] == pytest.approx(25.0, rel=0.4)
+    assert result["structural_uncertainty_ratio"] > result["input_uncertainty_ratio"]
+
+
+def test_variance_decomposition_three_term_matches_two_term_with_a_single_spec():
+    # With only one abandonment spec, there's no structural axis to
+    # measure -- this must reduce exactly to variance_decomposition's own
+    # within/across split, not silently produce a different number.
+    rng = np.random.default_rng(1)
+    n_bootstrap, n_replications = 50, 10
+    draw_shift = rng.normal(0, 3.0, size=n_bootstrap)
+    noise = rng.normal(0, 1.0, size=(n_bootstrap, n_replications))
+    diff = draw_shift[:, None] + noise
+    metric_a, metric_b = diff, np.zeros_like(diff)
+
+    two_term = variance_decomposition(metric_a, metric_b)
+    three_term = variance_decomposition_three_term({300.0: metric_a}, {300.0: metric_b})
+
+    assert three_term["intrinsic_variance"] == pytest.approx(two_term["within_theta_variance"])
+    assert three_term["input_estimation_variance"] == pytest.approx(two_term["across_theta_variance"])
+    assert three_term["structural_variance"] == pytest.approx(0.0)
+
+
+def test_variance_decomposition_three_term_rejects_mismatched_spec_keys():
+    metric = np.array([[1.0, 2.0], [3.0, 4.0]])
+    with pytest.raises(ValueError):
+        variance_decomposition_three_term({60.0: metric}, {300.0: metric})
 
 
 def test_indifference_set_excludes_a_clearly_worse_policy():

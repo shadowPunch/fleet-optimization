@@ -4,11 +4,11 @@ a *genuinely close* pair, not just a large-effect-size one?
 `coarsening_ladder_sweep.py` (the first C6 run) compared B0 vs. B1 and
 found the ranking survived every rung — expected, since that pair sits
 well outside C2's own indifference zone even at full resolution
-(`docs/coarsening_ladder.md` flagged this as not a strong test).
+(`TECHNICAL_REPORT.md` flagged this as not a strong test).
 `value_weight_sweep_run.py` then found a real indifference set:
 `ValueCorrectedHungarianPolicy` at `value_weight` in
 `{0.5, 0.75, 1.0, 1.5}` are all statistically indistinguishable from each
-other (`docs/indifference_search.md`). This script re-runs the exact same
+other (`TECHNICAL_REPORT.md`). This script re-runs the exact same
 coarsening ladder on `weight_0.5` vs. `weight_1.5` — the two most distant
 members of that indifference set, giving coarsening the best chance to
 actually separate them (in either direction) if it's going to.

@@ -11,7 +11,7 @@ from dispatch_eval.calibration.arrivals import (
     fit_arrival_model,
 )
 from dispatch_eval.calibration.fare import fit_fare_model
-from dispatch_eval.calibration.fleet_size import calibrate_fleet_size, ks_distance
+from dispatch_eval.calibration.fleet_size import calibrate_fleet_size, ks_distance, ratio_loss
 from dispatch_eval.calibration.od import fit_od_model
 from dispatch_eval.calibration.travel_time import fit_travel_time_model
 from dispatch_eval.models import NHPPArrivalModel
@@ -167,6 +167,47 @@ def test_calibrate_fleet_size_flags_hit_boundary_when_true_optimum_is_outside_th
 
     assert result.fleet_size == 25  # the largest candidate -- a boundary value, not a true optimum
     assert result.hit_boundary is True
+
+
+def test_ratio_loss_is_zero_when_shape_matches_regardless_of_absolute_scale():
+    # 11 elements, 9-low/2-high split: np.percentile's default linear
+    # interpolation lands the 90th percentile exactly on the high block
+    # (index 9 of 11, no interpolation), so median/p90 are exactly the
+    # low/high values, not an interpolated blend -- verified directly,
+    # not assumed.
+    observed_median, observed_p90 = 100.0, 300.0  # ratio 3.0
+    same_ratio_different_scale = np.array([50.0] * 9 + [150.0] * 2)  # median=50, p90=150, ratio=3.0
+    same_scale_different_ratio = np.array([100.0] * 9 + [500.0] * 2)  # median=100, p90=500, ratio=5.0
+
+    assert ratio_loss(same_ratio_different_scale, observed_median, observed_p90) == pytest.approx(0.0)
+    assert ratio_loss(same_scale_different_ratio, observed_median, observed_p90) > 0.0
+
+
+def test_ratio_loss_is_inf_for_degenerate_input():
+    assert ratio_loss(np.array([]), 100.0, 300.0) == float("inf")
+    assert ratio_loss(np.array([1.0, 2.0]), 0.0, 300.0) == float("inf")  # observed_median <= 0
+
+
+def test_calibrate_fleet_size_with_ratio_loss_prefers_shape_match_over_absolute_scale():
+    # fleet=10: right absolute scale, slightly wrong ratio (3.2 vs 3.0).
+    # fleet=20: exactly right ratio (3.0), way off on absolute scale.
+    # The two loss functions must disagree on which is "better." (9-low/
+    # 2-high split of 11 elements: see the ratio_loss test above for why
+    # this exactly fixes median/p90, no interpolation.)
+    def simulate_fn(fleet_size: int) -> np.ndarray:
+        if fleet_size == 10:
+            return np.array([100.0] * 9 + [320.0] * 2)
+        return np.array([10.0] * 9 + [30.0] * 2)
+
+    observed = np.array([100.0] * 9 + [300.0] * 2)  # median=100, p90=300, ratio=3.0
+
+    default_result = calibrate_fleet_size(observed, simulate_fn, candidate_fleet_sizes=[10, 20])
+    ratio_result = calibrate_fleet_size(
+        observed, simulate_fn, candidate_fleet_sizes=[10, 20], loss_fn=ratio_loss
+    )
+
+    assert default_result.fleet_size == 10  # absolute loss prefers the scale match
+    assert ratio_result.fleet_size == 20  # ratio loss prefers the shape match
 
 
 def test_ks_distance_is_zero_for_identical_samples():
