@@ -588,6 +588,36 @@ exactly the failure mode this project's methodology exists to prevent.
 Every synthetic-data result in this report describes this simulator's own
 dynamics; it is not yet demonstrated to describe any real market's.
 
+#### Validation V2 — pre-specification (2026-09-28, before the full run)
+
+A re-examination of the V1 failure found a different root cause from the
+one stated above. `TravelTimeModel` hard-coded every same-zone move to
+~60s, and at a calibrated fleet of 4,500 nearly every pickup is same-zone,
+so simulated waits clustered at ~65s whatever the fleet size. Separately,
+the real wait (median 180s) has two observable parts that NYC reports via
+`on_scene_datetime`: request → driver on scene (median 116s) and on scene
+→ rider aboard (median 45s). The simulator modelled no boarding at all.
+
+V2 changes the model, not the test:
+
+- **Boarding** — fitted directly from the calibration days
+  (`pickup − on_scene`, empirical distribution), fixed per request in the
+  scenario like patience.
+- **Same-zone pickup time** — a latent lognormal, median calibrated
+  jointly with fleet size by grid search on the calibration days only
+  (KS to the calibration days' waits); sigma taken from real same-zone
+  trip durations. Grid: fleet {1500…10000} × median {45…300}s
+  (`configs/nyc.yaml`).
+- Everything else unchanged: same scope, same calibration/held-out split,
+  same nearest-idle reference policy, same patience (300s), same
+  thresholds (KS ≤ 0.10, cosine ≥ 0.90), evaluated once on the held-out
+  days.
+
+Disclosure: a 2×2 smoke test of the pipeline (fleet {3000, 4000} × median
+{90, 150}s, one replication) ran before this note was written and gave a
+held-out KS of 0.097. The grid and thresholds above were already fixed in
+`configs/nyc.yaml` at that point and are not changed in response to it.
+
 ### 5.6 C3 — decision currency and B5's clairvoyant bound
 
 Run end-to-end against the synthetic confirmatory study at the

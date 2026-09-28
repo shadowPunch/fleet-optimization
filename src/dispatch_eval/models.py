@@ -97,6 +97,10 @@ class TravelTimeModel:
         default_factory=dict, repr=False, compare=False
     )
 
+    def with_intra_zone(self, intra_zone_params: tuple[float, float]) -> TravelTimeModel:
+        """Copy with a different same-zone pickup time (fresh memo cache)."""
+        return TravelTimeModel(self.params, self.fallback_params, intra_zone_params)
+
     def _mu_sigma(self, origin: str, dest: str, hour: int) -> tuple[float, float]:
         if origin == dest:
             return self.intra_zone_params

@@ -4,7 +4,8 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 *.egg-info/
-data/raw/
+data/
 analysis/cache/
 results/
 .claude/
+wandb/

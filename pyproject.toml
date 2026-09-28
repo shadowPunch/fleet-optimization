@@ -17,6 +17,9 @@ dependencies = [
     "matplotlib>=3.11.2",
 ]
 
+[project.scripts]
+dispatch-eval = "dispatch_eval.cli:main"
+
 [dependency-groups]
 dev = [
     "geopandas>=1.1.4",

@@ -1,0 +1,29 @@
+# NYC TLC study: Manhattan-only Uber (HV0003), January 2024 weekdays.
+# Scope and split fixed before any validation was run (TECHNICAL_REPORT.md §5.5).
+data:
+  month: "2024-01"
+  operator: HV0003
+  borough: Manhattan
+  window_start_hour: 12
+  window_end_hour: 18
+  # Weekdays excluding New Year's Day and MLK Day; first 10 calibrate, last 4 are held out.
+  calibration_days: [2, 3, 4, 5, 8, 9, 10, 11, 12, 16]
+  held_out_days: [17, 18, 19, 22]
+  cache_dir: data/cache
+
+simulation:
+  dispatch_interval_seconds: 5.0
+  reposition_interval_seconds: 60.0
+  mean_patience_seconds: 300.0  # abandonment hazard: structural assumption, not fit
+  arrival_bin_minutes: 15
+  od_bin_minutes: 60
+
+validation:
+  # Pre-registered acceptance thresholds (unchanged since 2026-08-04).
+  ks_threshold: 0.10
+  cosine_threshold: 0.90
+  n_replications: 4
+  seed: 0
+  # Latent supply calibration grid (calibration days only).
+  fleet_sizes: [1500, 2000, 2500, 3000, 3500, 4000, 5000, 6500, 8000, 10000]
+  intra_zone_median_seconds: [45, 60, 90, 120, 150, 180, 240, 300]
