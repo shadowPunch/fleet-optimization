@@ -53,6 +53,10 @@ def wait_components_by_hour(trips: pl.DataFrame) -> pl.DataFrame:
             pl.col("wait_s").quantile(0.9).alias("p90_wait_s"),
             pl.col("approach_s").median().alias("median_approach_s"),
             pl.col("boarding_s").median().alias("median_boarding_s"),
+            # Means add up (approach + boarding = wait); medians don't.
+            pl.col("wait_s").mean().alias("mean_wait_s"),
+            pl.col("approach_s").mean().alias("mean_approach_s"),
+            pl.col("boarding_s").mean().alias("mean_boarding_s"),
         )
         .sort("hour")
     )

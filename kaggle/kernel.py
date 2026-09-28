@@ -11,12 +11,27 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 REGIME = "__REGIME__"  # substituted by push.sh
 N_BOOTSTRAP = "__N_BOOTSTRAP__"
-INPUT = Path(glob.glob("/kaggle/input/*dispatch-eval-inputs*")[0])
 WORK = Path("/kaggle/working")
+
+
+def find_input(timeout_s: int = 600) -> Path:
+    """The attached dataset's directory. Its mount path varies across Kaggle
+    runtimes and can appear a little after start-up, so search and retry."""
+    deadline = time.time() + timeout_s
+    while time.time() < deadline:
+        hits = glob.glob("/kaggle/input/**/nyc.yaml", recursive=True)
+        if hits:
+            return Path(hits[0]).parent
+        time.sleep(15)
+    raise FileNotFoundError("inputs dataset not mounted under /kaggle/input")
+
+
+INPUT = find_input()
 
 
 def run(cmd: list[str]) -> None:

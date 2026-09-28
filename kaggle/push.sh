@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Build the inputs dataset and push one study kernel per regime to Kaggle.
 # Usage: kaggle/push.sh [n_bootstrap]   (default: the config's n_bootstrap)
+# Env: REGIMES="tight mid" to push only some regimes; SKIP_DATASET=1 to reuse
+# the already-uploaded inputs dataset.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -10,6 +12,7 @@ N_BOOTSTRAP="${1:-}"
 BUILD=$(mktemp -d)
 
 # 1. Inputs dataset: package wheel, config, cached NYC window, validation result.
+if [[ -z "${SKIP_DATASET:-}" ]]; then
 rm -rf dist && uv build --wheel -q
 mkdir -p "$BUILD/dataset"
 cp dist/*.whl configs/nyc.yaml results/nyc_validation.json data/cache/nyc_taxi_zone_lookup.csv \
@@ -24,9 +27,11 @@ else
 fi
 echo "waiting for dataset to be ready..."
 until kaggle datasets status "$USER/$DATASET" 2>/dev/null | grep -q ready; do sleep 10; done
+fi
 
 # 2. One kernel per regime.
-for REGIME in $(uv run python -c "import yaml; print(' '.join(yaml.safe_load(open('configs/nyc.yaml'))['study']['regimes']))"); do
+ALL_REGIMES=$(uv run python -c "import yaml; print(' '.join(yaml.safe_load(open('configs/nyc.yaml'))['study']['regimes']))")
+for REGIME in ${REGIMES:-$ALL_REGIMES}; do
   KDIR="$BUILD/kernel-$REGIME"
   mkdir -p "$KDIR"
   sed -e "s/__REGIME__/$REGIME/" -e "s/__N_BOOTSTRAP__/$N_BOOTSTRAP/" kaggle/kernel.py > "$KDIR/kernel.py"

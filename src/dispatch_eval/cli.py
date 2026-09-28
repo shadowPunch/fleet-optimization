@@ -50,6 +50,13 @@ def _eda(args: argparse.Namespace) -> None:
     print(json.dumps(summary, indent=2, default=float))
 
 
+def _report(args: argparse.Namespace) -> None:
+    from dispatch_eval.studies.report import build_report
+
+    for path in build_report(args.results_dir, args.output_dir):
+        print(f"wrote {path}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="dispatch-eval", description=__doc__)
     sub = parser.add_subparsers(required=True)
@@ -72,6 +79,11 @@ def main() -> None:
     eda.add_argument("--config", type=Path, default=Path("configs/nyc.yaml"))
     eda.add_argument("--output-dir", type=Path, default=Path("results/eda"))
     eda.set_defaults(func=_eda)
+
+    report = sub.add_parser("report", help="rebuild all figures from saved results")
+    report.add_argument("--results-dir", type=Path, default=Path("results"))
+    report.add_argument("--output-dir", type=Path, default=Path("docs/figures"))
+    report.set_defaults(func=_report)
 
     args = parser.parse_args()
     args.func(args)
