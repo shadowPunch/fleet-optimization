@@ -2,7 +2,8 @@
 # Build the inputs dataset and push one study kernel per regime to Kaggle.
 # Usage: kaggle/push.sh [n_bootstrap]   (default: the config's n_bootstrap)
 # Env: REGIMES="tight mid" to push only some regimes; SKIP_DATASET=1 to reuse
-# the already-uploaded inputs dataset.
+# the already-uploaded inputs dataset; SHARDS="0:100 100:200" to split each
+# regime into one kernel per draw range (merge with `dispatch-eval merge`).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -32,13 +33,16 @@ fi
 # 2. One kernel per regime.
 ALL_REGIMES=$(uv run python -c "import yaml; print(' '.join(yaml.safe_load(open('configs/nyc.yaml'))['study']['regimes']))")
 for REGIME in ${REGIMES:-$ALL_REGIMES}; do
-  KDIR="$BUILD/kernel-$REGIME"
+for SHARD in ${SHARDS:-all}; do
+  if [[ "$SHARD" == all ]]; then DRAWS=""; SLUG="$REGIME"; else DRAWS="$SHARD"; SLUG="$REGIME-${SHARD%%:*}"; fi
+  KDIR="$BUILD/kernel-$SLUG"
   mkdir -p "$KDIR"
-  sed -e "s/__REGIME__/$REGIME/" -e "s/__N_BOOTSTRAP__/$N_BOOTSTRAP/" kaggle/kernel.py > "$KDIR/kernel.py"
+  sed -e "s/__REGIME__/$REGIME/" -e "s/__N_BOOTSTRAP__/$N_BOOTSTRAP/" -e "s/__DRAWS__/$DRAWS/" \
+    kaggle/kernel.py > "$KDIR/kernel.py"
   cat > "$KDIR/kernel-metadata.json" <<JSON
 {
-  "id": "$USER/fleet-dispatch-study-$REGIME",
-  "title": "fleet dispatch study $REGIME",
+  "id": "$USER/fleet-dispatch-study-$SLUG",
+  "title": "fleet dispatch study $SLUG",
   "code_file": "kernel.py",
   "language": "python",
   "kernel_type": "script",
@@ -49,5 +53,6 @@ for REGIME in ${REGIMES:-$ALL_REGIMES}; do
 }
 JSON
   kaggle kernels push -p "$KDIR"
+done
 done
 echo "pushed; check with: kaggle kernels status $USER/fleet-dispatch-study-<regime>"

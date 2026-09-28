@@ -32,11 +32,27 @@ def _study(args: argparse.Namespace) -> None:
     from dispatch_eval.studies.policy_study import run_policy_study
 
     validation = json.loads(args.validation.read_text())
+    draws = None
+    if args.draws:
+        start, stop = (int(x) for x in args.draws.split(":"))
+        draws = range(start, stop)
     summary = run_policy_study(
         _load_config(args.config), args.regime, validation, args.output_dir, args.workers,
-        args.n_bootstrap,
+        args.n_bootstrap, draws,
     )
     print(json.dumps({k: v for k, v in summary.items() if k != "policies"}, indent=2, default=float))
+
+
+def _merge(args: argparse.Namespace) -> None:
+    from dispatch_eval.studies.policy_study import merge_policy_study
+    from dispatch_eval.tracking import tracked_run
+
+    with tracked_run(f"nyc-study-{args.regime}-merged", "policy-study",
+                     {"regime": args.regime}, tags=["nyc", args.regime, "merge"]) as run:
+        summary = merge_policy_study(args.regime, args.output_dir)
+        run.summary.update({"best_policy": summary["best_policy"],
+                            "n_draws": summary["n_draws_completed"]})
+    print(f"merged {summary['n_draws_completed']} draws; best policy: {summary['best_policy']}")
 
 
 def _eda(args: argparse.Namespace) -> None:
@@ -75,7 +91,13 @@ def main() -> None:
     study.add_argument("--output-dir", type=Path, default=Path("results"))
     study.add_argument("--workers", type=int, default=1)
     study.add_argument("--n-bootstrap", type=int, default=None, help="override the config")
+    study.add_argument("--draws", default=None, help="run one shard of draws, e.g. 0:50")
     study.set_defaults(func=_study)
+
+    merge = sub.add_parser("merge", help="combine a regime's shards into the final study files")
+    merge.add_argument("--regime", required=True)
+    merge.add_argument("--output-dir", type=Path, default=Path("results"))
+    merge.set_defaults(func=_merge)
 
     eda = sub.add_parser("eda", help="exploratory tables for the NYC study window")
     eda.add_argument("--config", type=Path, default=Path("configs/nyc.yaml"))

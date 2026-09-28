@@ -28,6 +28,7 @@ import polars as pl
 from dispatch_eval.calibration.value_function import compute_value_function
 from dispatch_eval.decision_currency import (
     DecisionCurrencyResult,
+    FleetWaitCurve,
     build_fleet_wait_curve,
     decision_currency,
     mean_fare_per_trip,
@@ -38,6 +39,8 @@ from dispatch_eval.policies.registry import POLICY_LABELS, build_ladder, tune_la
 from dispatch_eval.ranking_flip import (
     RankingFlipResult,
     indifference_set,
+    merge_results,
+    rank_draws,
     run_ranking_flip_experiment,
     variance_decomposition,
 )
@@ -140,7 +143,8 @@ def long_table(result: RankingFlipResult, regime: str) -> pl.DataFrame:
     for name in result.policy_names:
         waits = result.metric_by_policy[name]
         n_draws, n_reps = waits.shape
-        draws, reps = np.meshgrid(np.arange(n_draws), np.arange(n_reps), indexing="ij")
+        ids = result.draw_ids if result.draw_ids is not None else np.arange(n_draws)
+        draws, reps = np.meshgrid(ids, np.arange(n_reps), indexing="ij")
         frames.append(
             pl.DataFrame(
                 {
@@ -156,6 +160,82 @@ def long_table(result: RankingFlipResult, regime: str) -> pl.DataFrame:
     return pl.concat(frames)
 
 
+def result_from_long_table(
+    table: pl.DataFrame, policy_names: list[str], nominal_ranking: list[str]
+) -> RankingFlipResult:
+    """Inverse of `long_table`: rebuild the per-cell arrays of one regime."""
+    table = table.sort("bootstrap_draw", "replication")
+    draw_ids = table["bootstrap_draw"].unique(maintain_order=True).to_numpy()
+    n_reps = table["replication"].n_unique()
+
+    def cells(name: str, column: str) -> np.ndarray:
+        rows = table.filter(pl.col("policy") == name)[column].to_numpy()
+        return rows.reshape(len(draw_ids), n_reps)
+
+    metric = {n: cells(n, "mean_wait_seconds") for n in policy_names}
+    return RankingFlipResult(
+        policy_names=policy_names,
+        metric_by_policy=metric,
+        rankings=rank_draws(metric, policy_names),
+        nominal_ranking=nominal_ranking,
+        secondary_metrics={"fraction_served": {n: cells(n, "fraction_served") for n in policy_names}},
+        draw_ids=draw_ids,
+    )
+
+
+def _shard_stem(regime: str, draws: range) -> str:
+    return f"nyc_study_{regime}.shard{draws.start:04d}-{draws.stop:04d}"
+
+
+def finalize_study(meta: dict, result: RankingFlipResult, output_dir: Path) -> dict:
+    """Summarize a complete (or merged) experiment and write the regime's
+    `nyc_study_<regime>.{json,parquet}`."""
+    regime = meta["regime"]
+    curve = FleetWaitCurve(**meta["fleet_curve"])
+    currency = decision_currency(
+        result, REFERENCE_POLICY, curve, meta["fleet_size"],
+        horizon_hours=meta["horizon_hours"],
+        dollars_per_trip=meta["dollars_per_trip"],
+        reference_trips_per_vehicle_per_day=meta["reference_trips_per_vehicle_per_day"],
+    )
+    summary = {
+        **meta,
+        "n_draws_completed": len(result.draw_ids) if result.draw_ids is not None else None,
+        **summarize(result),
+        "vehicles_worth": paired_vehicles_worth(
+            currency, REFERENCE_POLICY, max(curve.fleet_sizes)
+        ),
+    }
+    output_dir.mkdir(parents=True, exist_ok=True)
+    long_table(result, regime).write_parquet(output_dir / f"nyc_study_{regime}.parquet")
+    (output_dir / f"nyc_study_{regime}.json").write_text(json.dumps(summary, indent=2, default=float))
+    return summary
+
+
+def merge_policy_study(regime: str, output_dir: Path) -> dict:
+    """Combine every shard of `regime` in `output_dir` into the final study
+    files. Shards must share identical metadata (same config and tuning)."""
+    metas = sorted(output_dir.glob(f"nyc_study_{regime}.shard*.json"))
+    if not metas:
+        raise FileNotFoundError(f"no shards for regime {regime!r} in {output_dir}")
+    shard_meta = [json.loads(m.read_text()) for m in metas]
+    comparable = [{k: v for k, v in m.items() if k not in ("draws", "runtime_minutes")}
+                  for m in shard_meta]
+    if any(c != comparable[0] for c in comparable):
+        raise ValueError("shards were produced with different settings; refusing to merge")
+    meta = comparable[0]
+    shards = [
+        result_from_long_table(
+            pl.read_parquet(path.with_suffix(".parquet")), meta["policy_names"],
+            meta["nominal_ranking"],
+        )
+        for path in metas
+    ]
+    merged = merge_results(shards)
+    meta["runtime_minutes"] = sum(m["runtime_minutes"] for m in shard_meta)
+    return finalize_study(meta, merged, output_dir)
+
+
 def run_policy_study(
     cfg: dict,
     regime: str,
@@ -163,10 +243,14 @@ def run_policy_study(
     output_dir: Path,
     n_workers: int,
     n_bootstrap: int | None = None,
+    draws: range | None = None,
 ) -> dict:
+    """Run one regime; with `draws` set, run only that shard of the bootstrap
+    draws and write shard files for `merge_policy_study` instead."""
     study = cfg["study"]
     regime_cfg = study["regimes"][regime]
     n_bootstrap = n_bootstrap or study["n_bootstrap"]
+    draws = draws or range(n_bootstrap)
     twin = build_twin(cfg)
     sim = cfg["simulation"]
 
@@ -182,10 +266,12 @@ def run_policy_study(
         "fleet_size": fleet_size,
         "n_bootstrap": n_bootstrap,
         "n_workers": n_workers,
+        "draws": [draws.start, draws.stop],
         "intra_zone_params": intra,
         "validation_summary": {k: v for k, v in validation.items() if not isinstance(v, list)},
     }
-    with tracked_run(f"nyc-study-{regime}", "policy-study", run_config, tags=["nyc", regime]) as run:
+    name = f"nyc-study-{regime}" + ("" if len(draws) == n_bootstrap else f"-d{draws.start}-{draws.stop}")
+    with tracked_run(name, "policy-study", run_config, tags=["nyc", regime]) as run:
         value_function = compute_value_function(
             twin.data.zones, models.arrival, models.od, models.travel_time, "all", horizon,
             od_bin_minutes=sim["od_bin_minutes"],
@@ -229,7 +315,7 @@ def run_policy_study(
             nonlocal draws_done
             draws_done += 1
             elapsed = time.time() - started
-            print(f"[{regime}] draw {b} done ({draws_done}/{n_bootstrap}, "
+            print(f"[{regime}] draw {b} done ({draws_done}/{len(draws)}, "
                   f"{elapsed / 60:.1f} min)", flush=True)
             run.log({"draws_done": draws_done, "elapsed_minutes": elapsed / 60})
 
@@ -249,6 +335,7 @@ def run_policy_study(
             secondary_metric_fns={"fraction_served": fraction_served},
             n_workers=n_workers,
             on_draw_done=on_draw_done,
+            draws=draws,
         )
 
         print(f"[{regime}] fleet-equivalence curve for {REFERENCE_POLICY}...", flush=True)
@@ -258,36 +345,39 @@ def run_policy_study(
             study["fleet_curve_replications"], study["seed"],
         )
         reference_run = twin.simulate(fleet_size, intra, study["seed"])
-        currency = decision_currency(
-            result,
-            REFERENCE_POLICY,
-            curve,
-            fleet_size,
-            horizon_hours=horizon / 3600.0,
-            dollars_per_trip=mean_fare_per_trip(twin.data.calibration),
-            reference_trips_per_vehicle_per_day=trips_per_vehicle_per_day(
-                len(reference_run.completed_requests), fleet_size, horizon / 3600.0
-            ),
-        )
 
-        summary = {
+        meta = {
             "regime": regime,
             "fleet_size": fleet_size,
             "n_bootstrap": n_bootstrap,
             "n_replications": study["n_replications"],
+            "policy_names": result.policy_names,
+            "nominal_ranking": result.nominal_ranking,
             "tuned_params": params.as_dict(),
-        "tuning_best_scores": {name: t.best_score for name, t in tuning.items()},
-        "tuning_infeasible": infeasible,
-        "reference_fraction_served": reference.fraction_served,
+            "tuning_best_scores": {name: t.best_score for name, t in tuning.items()},
+            "tuning_infeasible": infeasible,
+            "reference_fraction_served": reference.fraction_served,
+            "fleet_curve": {"fleet_sizes": curve.fleet_sizes,
+                            "mean_wait_seconds": curve.mean_wait_seconds},
+            "horizon_hours": horizon / 3600.0,
+            "dollars_per_trip": mean_fare_per_trip(twin.data.calibration),
+            "reference_trips_per_vehicle_per_day": trips_per_vehicle_per_day(
+                len(reference_run.completed_requests), fleet_size, horizon / 3600.0
+            ),
             "runtime_minutes": (time.time() - started) / 60,
-            **summarize(result),
-            "fleet_curve": {"fleet_sizes": curve.fleet_sizes, "mean_wait_seconds": curve.mean_wait_seconds},
-            "vehicles_worth": paired_vehicles_worth(currency, REFERENCE_POLICY, max(curve_sizes)),
         }
-        output_dir.mkdir(parents=True, exist_ok=True)
-        long_table(result, regime).write_parquet(output_dir / f"nyc_study_{regime}.parquet")
-        (output_dir / f"nyc_study_{regime}.json").write_text(json.dumps(summary, indent=2, default=float))
 
+        if len(draws) < n_bootstrap:
+            output_dir.mkdir(parents=True, exist_ok=True)
+            stem = _shard_stem(regime, draws)
+            long_table(result, regime).write_parquet(output_dir / f"{stem}.parquet")
+            (output_dir / f"{stem}.json").write_text(
+                json.dumps({**meta, "draws": [draws.start, draws.stop]}, indent=2, default=float)
+            )
+            print(f"[{regime}] wrote shard {stem}; combine with `dispatch-eval merge`")
+            return meta
+
+        summary = finalize_study(meta, result, output_dir)
         run.log_table("policy_summary", [
             {k: (json.dumps(v) if isinstance(v, tuple | list) else v) for k, v in p.items()}
             for p in summary["policies"]

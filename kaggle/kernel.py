@@ -16,6 +16,7 @@ from pathlib import Path
 
 REGIME = "__REGIME__"  # substituted by push.sh
 N_BOOTSTRAP = "__N_BOOTSTRAP__"
+DRAWS = "__DRAWS__"  # "start:stop" for one shard, empty for all draws
 WORK = Path("/kaggle/working")
 
 
@@ -61,4 +62,6 @@ cmd = [
 ]
 if N_BOOTSTRAP:
     cmd += ["--n-bootstrap", N_BOOTSTRAP]
+if DRAWS:
+    cmd += ["--draws", DRAWS]
 run(cmd)

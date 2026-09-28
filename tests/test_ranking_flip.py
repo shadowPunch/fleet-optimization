@@ -429,3 +429,29 @@ def test_secondary_metrics_are_recorded_per_cell(trips_df):
     served = result.secondary_metrics["served"]["B0"]
     assert served.shape == (2, 2)
     assert np.all((served > 0) & (served <= 1))
+
+
+def test_merged_shards_reproduce_a_full_run_exactly(trips_df):
+    from dispatch_eval.ranking_flip import merge_results
+
+    policies = {"B0": NearestIdlePolicy(), "B1": BatchedHungarianPolicy()}
+    config = StudyConfig(zones=ZONES, day_type="all", horizon_seconds=2 * 3600.0)
+    kwargs = {
+        "trips_df": trips_df, "zones": ZONES, "policies": policies, "fleet_size": 20,
+        "abandonment_model": AbandonmentModel(mean_patience_seconds=300.0), "config": config,
+        "n_bootstrap": 5, "n_replications": 2, "seed": 11,
+        "secondary_metric_fns": {"served": lambda r: r.fraction_served},
+    }
+    full = run_ranking_flip_experiment(**kwargs)
+    later = run_ranking_flip_experiment(**kwargs, draws=range(2, 5))
+    early = run_ranking_flip_experiment(**kwargs, draws=range(2))
+    merged = merge_results([later, early])
+
+    assert merged.draw_ids.tolist() == [0, 1, 2, 3, 4]
+    for name in policies:
+        assert np.array_equal(merged.metric_by_policy[name], full.metric_by_policy[name])
+        assert np.array_equal(merged.secondary_metrics["served"][name],
+                              full.secondary_metrics["served"][name])
+    assert np.array_equal(merged.rankings, full.rankings)
+    with pytest.raises(ValueError, match="overlap"):
+        merge_results([early, early])

@@ -123,6 +123,8 @@ class RankingFlipResult:
     clairvoyant_fraction_excluded: np.ndarray | None = None  # same shape; see clairvoyant.py
     # metric name -> policy -> (n_bootstrap, n_replications); recorded, not ranked on
     secondary_metrics: dict[str, dict[str, np.ndarray]] | None = None
+    # bootstrap draw id of each row; None means rows are draws 0..n-1
+    draw_ids: np.ndarray | None = None
 
     def fraction_of_gap_closed(self, baseline_policy: str) -> dict[str, np.ndarray]:
         """B5's own normalization (project plan, B5 section): every policy's
@@ -320,6 +322,7 @@ def run_ranking_flip_experiment(
     secondary_metric_fns: dict[str, Callable[[SimulationResult], float]] | None = None,
     n_workers: int = 1,
     on_draw_done: Callable[[int], None] | None = None,
+    draws: range | None = None,
 ) -> RankingFlipResult:
     """Run the full B x R x |policies| bootstrap-CRN experiment.
 
@@ -374,6 +377,12 @@ def run_ranking_flip_experiment(
     `on_draw_done(b)` is called as each draw finishes (in completion order).
     `secondary_metric_fns` (e.g. fraction served) are recorded per cell in
     `RankingFlipResult.secondary_metrics` but play no part in ranking.
+
+    `draws` runs only a slice of the `n_bootstrap` draws (a shard), producing
+    exactly the rows a full run would for those draws: the resample stream
+    is still advanced through every earlier draw. Rows are then draws
+    `draws.start..draws.stop-1`, recorded in `RankingFlipResult.draw_ids`;
+    `merge_results` recombines shards.
     """
     policy_names = list(policies.keys())
 
@@ -414,31 +423,39 @@ def run_ranking_flip_experiment(
         nominal_metric[name] = metric_fn(result)
     nominal_ranking = sorted(policy_names, key=lambda name: nominal_metric[name])
 
-    metric_by_policy = {name: np.zeros((n_bootstrap, n_replications)) for name in policy_names}
+    draws = draws or range(n_bootstrap)
+    if draws.step != 1 or draws.start < 0 or draws.stop > n_bootstrap:
+        raise ValueError(f"draws must be a contiguous slice of range({n_bootstrap}), got {draws}")
+    n_rows = len(draws)
+    metric_by_policy = {name: np.zeros((n_rows, n_replications)) for name in policy_names}
     secondary = {
-        m: {name: np.zeros((n_bootstrap, n_replications)) for name in policy_names}
+        m: {name: np.zeros((n_rows, n_replications)) for name in policy_names}
         for m in draw_spec.secondary_metric_fns
     }
-    clairvoyant_metric = np.zeros((n_bootstrap, n_replications)) if compute_clairvoyant else None
-    clairvoyant_excluded = np.zeros((n_bootstrap, n_replications)) if compute_clairvoyant else None
+    clairvoyant_metric = np.zeros((n_rows, n_replications)) if compute_clairvoyant else None
+    clairvoyant_excluded = np.zeros((n_rows, n_replications)) if compute_clairvoyant else None
     resample_rng = np.random.default_rng(np.random.SeedSequence([seed, _RESAMPLE_SENTINEL]))
 
     def store(outcome: _DrawOutcome) -> None:
+        row = outcome.b - draws.start
         for name in policy_names:
-            metric_by_policy[name][outcome.b] = outcome.metrics[name]
+            metric_by_policy[name][row] = outcome.metrics[name]
             for m in secondary:
-                secondary[m][name][outcome.b] = outcome.secondary[m][name]
+                secondary[m][name][row] = outcome.secondary[m][name]
         if compute_clairvoyant:
-            clairvoyant_metric[outcome.b] = outcome.clairvoyant_metric
-            clairvoyant_excluded[outcome.b] = outcome.clairvoyant_excluded
+            clairvoyant_metric[row] = outcome.clairvoyant_metric
+            clairvoyant_excluded[row] = outcome.clairvoyant_excluded
         if on_draw_done is not None:
             on_draw_done(outcome.b)
 
     def next_indices() -> np.ndarray:
         return bootstrap_indices(trips_df.height, resample_rng)
 
+    for _ in range(draws.start):  # keep shard draws identical to a full run's
+        next_indices()
+
     if n_workers <= 1:
-        for b in range(n_bootstrap):
+        for b in draws:
             store(draw_spec.run_draw(b, next_indices()))
     else:
         # `draw_spec` (trip data, policies) is sent once per worker via the
@@ -450,7 +467,7 @@ def run_ranking_flip_experiment(
             n_workers, mp_context=context, initializer=_set_worker_spec, initargs=(draw_spec,)
         ) as pool:
             in_flight: set[Future] = set()
-            for b in range(n_bootstrap):
+            for b in draws:
                 if len(in_flight) >= 2 * n_workers:
                     done, in_flight = wait(in_flight, return_when=FIRST_COMPLETED)
                     for future in done:
@@ -459,19 +476,56 @@ def run_ranking_flip_experiment(
             for future in in_flight:
                 store(future.result())
 
-    rankings = np.empty((n_bootstrap, len(policy_names)), dtype=int)
-    for b in range(n_bootstrap):
-        means = [metric_by_policy[name][b].mean() for name in policy_names]
-        rankings[b] = np.argsort(means)
-
     return RankingFlipResult(
         policy_names=policy_names,
         metric_by_policy=metric_by_policy,
         clairvoyant_metric_by_draw=clairvoyant_metric,
         clairvoyant_fraction_excluded=clairvoyant_excluded,
-        rankings=rankings,
+        rankings=rank_draws(metric_by_policy, policy_names),
         nominal_ranking=nominal_ranking,
         secondary_metrics=secondary or None,
+        draw_ids=np.arange(draws.start, draws.stop),
+    )
+
+
+def rank_draws(metric_by_policy: dict[str, np.ndarray], policy_names: list[str]) -> np.ndarray:
+    """Per draw (row), policy indices ordered best (lowest mean) first."""
+    means = np.stack([metric_by_policy[name].mean(axis=1) for name in policy_names], axis=1)
+    return np.argsort(means, axis=1, kind="stable")
+
+
+def merge_results(shards: list[RankingFlipResult]) -> RankingFlipResult:
+    """Recombine shard results into one, rows ordered by draw id.
+
+    Shards must come from the same experiment (policies, seed, nominal
+    fit) and cover disjoint draws. The clairvoyant bound is not merged.
+    """
+    names = shards[0].policy_names
+    if any(s.policy_names != names or s.nominal_ranking != shards[0].nominal_ranking
+           for s in shards):
+        raise ValueError("shards come from different experiments")
+    ids = np.concatenate([s.draw_ids for s in shards])
+    if len(np.unique(ids)) != len(ids):
+        raise ValueError("shards overlap")
+    order = np.argsort(ids)
+
+    def cat(arrays: list[np.ndarray]) -> np.ndarray:
+        return np.concatenate(arrays)[order]
+
+    metric = {n: cat([s.metric_by_policy[n] for s in shards]) for n in names}
+    secondary = None
+    if shards[0].secondary_metrics:
+        secondary = {
+            m: {n: cat([s.secondary_metrics[m][n] for s in shards]) for n in names}
+            for m in shards[0].secondary_metrics
+        }
+    return RankingFlipResult(
+        policy_names=names,
+        metric_by_policy=metric,
+        rankings=rank_draws(metric, names),
+        nominal_ranking=shards[0].nominal_ranking,
+        secondary_metrics=secondary,
+        draw_ids=ids[order],
     )
 
 
