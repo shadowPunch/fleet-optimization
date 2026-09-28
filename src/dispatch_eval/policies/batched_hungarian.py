@@ -23,13 +23,9 @@ hasn't been sourced yet, so B1 here is tuned empirically (random search over
 
 from __future__ import annotations
 
-import numpy as np
-from scipy.optimize import linear_sum_assignment
-
 from dispatch_eval.models import TravelTimeModel
+from dispatch_eval.policies.zone_index import solve_batched_assignment
 from dispatch_eval.simulator.entities import Request, Vehicle
-
-_UNREACHABLE_COST = 1e9
 
 
 class BatchedHungarianPolicy:
@@ -44,24 +40,8 @@ class BatchedHungarianPolicy:
         current_hour: int,
         travel_time_model: TravelTimeModel,
     ) -> list[tuple[str, str]]:
-        if not waiting_requests or not idle_vehicles:
-            return []
+        def pair_cost(vehicle_zone: str, request: Request) -> float | None:
+            travel = travel_time_model.expected(vehicle_zone, request.origin_zone, current_hour)
+            return travel if travel <= self.matching_radius_seconds else None
 
-        n_req, n_veh = len(waiting_requests), len(idle_vehicles)
-        size = max(n_req, n_veh)
-        # Square, padded with a large cost so linear_sum_assignment (which
-        # requires a square matrix) never prefers a padding "ghost" match
-        # over a real one, and so out-of-radius pairs are excluded in effect.
-        cost = np.full((size, size), _UNREACHABLE_COST)
-        for i, request in enumerate(waiting_requests):
-            for j, vehicle in enumerate(idle_vehicles):
-                travel = travel_time_model.expected(vehicle.zone, request.origin_zone, current_hour)
-                if travel <= self.matching_radius_seconds:
-                    cost[i, j] = travel
-
-        row_ind, col_ind = linear_sum_assignment(cost)
-        assignments = []
-        for i, j in zip(row_ind, col_ind, strict=True):
-            if i < n_req and j < n_veh and cost[i, j] < _UNREACHABLE_COST:
-                assignments.append((idle_vehicles[j].vehicle_id, waiting_requests[i].request_id))
-        return assignments
+        return solve_batched_assignment(waiting_requests, idle_vehicles, pair_cost)

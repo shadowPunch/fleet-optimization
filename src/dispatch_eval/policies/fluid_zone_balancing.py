@@ -22,10 +22,10 @@ from __future__ import annotations
 from collections import Counter
 
 import numpy as np
-from scipy.optimize import linear_sum_assignment
 
 from dispatch_eval.models import NHPPArrivalModel, TravelTimeModel
 from dispatch_eval.policies.base import DispatchPolicy
+from dispatch_eval.policies.zone_index import group_by_zone, solve_zone_transport
 from dispatch_eval.simulator.entities import Request, Vehicle
 
 
@@ -93,33 +93,19 @@ class FluidZoneBalancingPolicy:
         target_shares = {z: rates[z] / total_rate for z in zones}
         target_counts = largest_remainder_allocation(target_shares, len(idle_vehicles))
 
-        vehicles_by_zone: dict[str, list[Vehicle]] = {}
-        for vehicle in idle_vehicles:
-            vehicles_by_zone.setdefault(vehicle.zone, []).append(vehicle)
         current_counts = Counter(v.zone for v in idle_vehicles)
+        surplus = {z: n - target_counts.get(z, 0) for z, n in current_counts.items()}
+        deficit = {z: target_counts.get(z, 0) - current_counts[z] for z in zones}
 
-        movers: list[Vehicle] = []
-        for zone, vehicles_here in vehicles_by_zone.items():
-            surplus = current_counts[zone] - target_counts.get(zone, 0)
-            if surplus > 0:
-                movers.extend(vehicles_here[:surplus])
-
-        deficit_zones: list[str] = []
-        for zone in zones:
-            deficit = target_counts.get(zone, 0) - current_counts[zone]
-            if deficit > 0:
-                deficit_zones.extend([zone] * deficit)
-
-        if not movers or not deficit_zones:
-            return []
-
-        cost = np.array(
-            [
-                [travel_time_model.expected(v.zone, z, current_hour) for z in deficit_zones]
-                for v in movers
-            ]
+        # Surplus vehicles move to deficit zones as a zone-level
+        # transportation problem (see zone_index) — the same optimum as a
+        # vehicle-by-slot assignment, without the O(V^2) matrix.
+        flows = solve_zone_transport(
+            surplus, deficit, lambda s, d: travel_time_model.expected(s, d, current_hour)
         )
-        row_ind, col_ind = linear_sum_assignment(cost)
+        by_zone = group_by_zone(idle_vehicles)
         return [
-            (movers[i].vehicle_id, deficit_zones[j]) for i, j in zip(row_ind, col_ind, strict=True)
+            (by_zone[src].popleft().vehicle_id, dst)
+            for src, dst, count in flows
+            for _ in range(count)
         ]

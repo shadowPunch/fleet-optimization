@@ -76,21 +76,41 @@ class ODModel:
         return zones[rng.choice(len(zones), p=p / p.sum())]
 
 
+DEFAULT_INTRA_ZONE_PARAMS = (float(np.log(60.0)), 0.3)
+
+
 @dataclass
 class TravelTimeModel:
-    """Lognormal travel time per (origin, dest, hour), log-seconds parameters."""
+    """Lognormal travel time per (origin, dest, hour), log-seconds parameters.
+
+    Same-zone moves (a pickup by a vehicle already in the rider's zone) use
+    `intra_zone_params` instead of the fitted trip cells: a passenger trip
+    that starts and ends in one zone is a poor proxy for a driver's approach
+    within it. The value is a calibrated latent parameter, not a fitted one
+    (see `calibration.pickup`).
+    """
 
     params: dict[tuple[str, str, int], tuple[float, float]]
     fallback_params: tuple[float, float]
+    intra_zone_params: tuple[float, float] = DEFAULT_INTRA_ZONE_PARAMS
+    _expected_cache: dict[tuple[str, str, int], float] = field(
+        default_factory=dict, repr=False, compare=False
+    )
 
     def _mu_sigma(self, origin: str, dest: str, hour: int) -> tuple[float, float]:
         if origin == dest:
-            return (float(np.log(60.0)), 0.3)
+            return self.intra_zone_params
         return self.params.get((origin, dest, hour), self.fallback_params)
 
     def expected(self, origin: str, dest: str, hour: int) -> float:
-        mu, sigma = self._mu_sigma(origin, dest, hour)
-        return float(np.exp(mu + sigma**2 / 2))
+        # Called once per candidate pair on every dispatch tick; memoized
+        # since the parameters never change after construction.
+        key = (origin, dest, hour)
+        value = self._expected_cache.get(key)
+        if value is None:
+            mu, sigma = self._mu_sigma(origin, dest, hour)
+            value = self._expected_cache[key] = float(np.exp(mu + sigma**2 / 2))
+        return value
 
     def sample(self, origin: str, dest: str, hour: int, rng: np.random.Generator) -> float:
         mu, sigma = self._mu_sigma(origin, dest, hour)
@@ -127,6 +147,24 @@ class FareModel:
 
     def expected_driver_pay(self, distance_km: float, duration_minutes: float) -> float:
         return self.expected_fare(distance_km, duration_minutes) * self.driver_pay_fraction
+
+
+@dataclass
+class BoardingModel:
+    """Time from the driver arriving on scene to the rider boarding.
+
+    Empirical inverse CDF over `quantiles` (seconds, at evenly spaced
+    probabilities from 0 to 1): no parametric family is imposed, and
+    sampling interpolates between quantiles so draws stay continuous.
+    """
+
+    quantiles: np.ndarray
+
+    def sample(self, rng: np.random.Generator) -> float:
+        u = rng.random() * (len(self.quantiles) - 1)
+        lo = int(u)
+        hi = min(lo + 1, len(self.quantiles) - 1)
+        return float(self.quantiles[lo] + (u - lo) * (self.quantiles[hi] - self.quantiles[lo]))
 
 
 @dataclass

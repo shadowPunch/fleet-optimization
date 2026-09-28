@@ -24,11 +24,13 @@ not where any given rider is going.
 
 from __future__ import annotations
 
+from collections import Counter
+
 import numpy as np
-from scipy.optimize import linear_sum_assignment
 
 from dispatch_eval.models import NHPPArrivalModel, TravelTimeModel
 from dispatch_eval.policies.base import DispatchPolicy
+from dispatch_eval.policies.zone_index import group_by_zone, solve_zone_transport
 from dispatch_eval.simulator.entities import Request, Vehicle
 
 
@@ -72,27 +74,25 @@ class SamplingLookaheadPolicy:
         start_minute = current_time / 60.0
         end_minute = (current_time + self.lookahead_seconds) / 60.0
 
-        sampled_zones: list[str] = []
+        sampled_demand: dict[str, int] = {}
         for zone in zones:
             arrival_minutes = self.arrival_model.generate_arrival_minutes(
                 zone, self.day_type, start_minute, end_minute, rng
             )
-            sampled_zones.extend([zone] * len(arrival_minutes))
+            sampled_demand[zone] = len(arrival_minutes)
 
-        if not sampled_zones:
-            return []
-
-        cost = np.array(
-            [
-                [travel_time_model.expected(v.zone, z, current_hour) for z in sampled_zones]
-                for v in idle_vehicles
-            ]
+        # Idle vehicles matched to sampled pickups as a zone-level
+        # transportation problem (see zone_index); flows that stay in their
+        # own zone are no-ops.
+        flows = solve_zone_transport(
+            Counter(v.zone for v in idle_vehicles),
+            sampled_demand,
+            lambda s, d: travel_time_model.expected(s, d, current_hour),
         )
-        row_ind, col_ind = linear_sum_assignment(cost)
-
-        moves = []
-        for i, j in zip(row_ind, col_ind, strict=True):
-            vehicle, target_zone = idle_vehicles[i], sampled_zones[j]
-            if target_zone != vehicle.zone:  # already there; nothing to do
-                moves.append((vehicle.vehicle_id, target_zone))
-        return moves
+        by_zone = group_by_zone(idle_vehicles)
+        return [
+            (by_zone[src].popleft().vehicle_id, dst)
+            for src, dst, count in flows
+            if src != dst
+            for _ in range(count)
+        ]

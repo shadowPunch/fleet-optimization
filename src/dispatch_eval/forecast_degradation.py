@@ -154,7 +154,11 @@ def flatten_travel_time_model(model: TravelTimeModel) -> TravelTimeModel:
     """
     new_params = {key: (mu, 0.0) for key, (mu, _sigma) in model.params.items()}
     new_fallback = (model.fallback_params[0], 0.0)
-    return TravelTimeModel(params=new_params, fallback_params=new_fallback)
+    return TravelTimeModel(
+        params=new_params,
+        fallback_params=new_fallback,
+        intra_zone_params=model.intra_zone_params,
+    )
 
 
 @dataclass

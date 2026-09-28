@@ -31,7 +31,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from dispatch_eval.models import AbandonmentModel, NHPPArrivalModel, ODModel
+from dispatch_eval.models import AbandonmentModel, BoardingModel, NHPPArrivalModel, ODModel
 from dispatch_eval.simulator.entities import Request
 
 
@@ -56,6 +56,7 @@ def generate_scenario(
     horizon_seconds: float,
     rng: np.random.Generator,
     od_bin_minutes: float = 60.0,
+    boarding_model: BoardingModel | None = None,
 ) -> Scenario:
     """Generate every request that will arrive over the horizon, upfront.
 
@@ -63,7 +64,9 @@ def generate_scenario(
     arrival stream — including every arrival's destination and patience —
     is drawn before moving to the next zone, so the sequence of draws from
     `rng` depends only on `zones` and the fitted models, never on simulation
-    or policy behaviour.
+    or policy behaviour. Boarding time is a rider attribute like patience,
+    so it is fixed here too; with no `boarding_model` it is zero and no
+    extra draws are made (older scenarios reproduce exactly).
     """
     horizon_minutes = horizon_seconds / 60.0
     requests: list[Request] = []
@@ -78,6 +81,7 @@ def generate_scenario(
             od_time_bin = int(minute // od_bin_minutes)
             dest_zone = od_model.sample_destination(zone, od_time_bin, rng)
             patience = abandonment_model.sample_patience(rng)
+            boarding = boarding_model.sample(rng) if boarding_model is not None else 0.0
             requests.append(
                 Request(
                     request_id=f"req-{counter}",
@@ -85,6 +89,7 @@ def generate_scenario(
                     dest_zone=dest_zone,
                     request_time=request_time,
                     abandon_at=request_time + patience,
+                    boarding_seconds=boarding,
                 )
             )
             counter += 1

@@ -37,8 +37,10 @@ class Request:
     dest_zone: str
     request_time: float
     abandon_at: float
+    boarding_seconds: float = 0.0  # on-scene -> rider aboard; exogenous, fixed by the scenario
     status: RequestStatus = RequestStatus.WAITING
     assigned_vehicle_id: str | None = None
+    on_scene_time: float | None = None
     pickup_time: float | None = None
     dropoff_time: float | None = None
 

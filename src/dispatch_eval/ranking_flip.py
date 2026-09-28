@@ -37,7 +37,9 @@ Scope decisions, both deliberate:
 
 from __future__ import annotations
 
+import multiprocessing
 from collections.abc import Callable
+from concurrent.futures import FIRST_COMPLETED, Future, ProcessPoolExecutor, wait
 from dataclasses import dataclass
 
 import numpy as np
@@ -45,12 +47,14 @@ import polars as pl
 from scipy.stats import kendalltau, norm
 
 from dispatch_eval.calibration.arrivals import fit_arrival_model
+from dispatch_eval.calibration.boarding import fit_boarding_model
 from dispatch_eval.calibration.fare import fit_fare_model
 from dispatch_eval.calibration.od import fit_od_model
 from dispatch_eval.calibration.travel_time import fit_travel_time_model
 from dispatch_eval.clairvoyant import solve_clairvoyant_schedule
 from dispatch_eval.models import (
     AbandonmentModel,
+    BoardingModel,
     FareModel,
     NHPPArrivalModel,
     ODModel,
@@ -69,14 +73,17 @@ class FittedModels:
     od: ODModel
     travel_time: TravelTimeModel
     fare: FareModel
+    boarding: BoardingModel | None = None
 
 
 def bootstrap_resample_trips(df: pl.DataFrame, rng: np.random.Generator) -> pl.DataFrame:
     """A standard nonparametric bootstrap: resample rows with replacement,
     same size as the original. This is D*_b in the plan's P3 pseudocode."""
-    n = df.height
-    indices = rng.integers(0, n, size=n)
-    return df[indices]
+    return df[bootstrap_indices(df.height, rng)]
+
+
+def bootstrap_indices(n: int, rng: np.random.Generator) -> np.ndarray:
+    return rng.integers(0, n, size=n)
 
 
 def fit_all_models(
@@ -84,16 +91,25 @@ def fit_all_models(
     day_type_col: str | None = None,
     bin_minutes: int = 15,
     od_time_bin_minutes: int = 60,
+    intra_zone_params: tuple[float, float] | None = None,
 ) -> FittedModels:
     """Refit every (non-latent, non-structural) input model on `df` in one
     call — the theta*_b step. See the module docstring for why fleet size
     and the abandonment hazard are excluded from this refit.
+
+    `intra_zone_params` is the calibrated same-zone pickup time (latent,
+    see `calibration.pickup`), carried into every refit unchanged; None
+    keeps `TravelTimeModel`'s default.
     """
+    travel_time = fit_travel_time_model(df)
+    if intra_zone_params is not None:
+        travel_time.intra_zone_params = intra_zone_params
     return FittedModels(
         arrival=fit_arrival_model(df, day_type_col=day_type_col, bin_minutes=bin_minutes),
         od=fit_od_model(df, time_bin_minutes=od_time_bin_minutes),
-        travel_time=fit_travel_time_model(df),
+        travel_time=travel_time,
         fare=fit_fare_model(df),
+        boarding=fit_boarding_model(df),
     )
 
 
@@ -164,6 +180,115 @@ def _mean_wait_seconds(result: SimulationResult) -> float:
     return result.mean_wait_seconds
 
 
+@dataclass
+class _DrawOutcome:
+    b: int
+    metrics: dict[str, np.ndarray]  # policy -> shape (n_replications,)
+    clairvoyant_metric: np.ndarray | None
+    clairvoyant_excluded: np.ndarray | None
+
+
+@dataclass
+class _DrawSpec:
+    """Everything one bootstrap draw needs, bundled so a worker process can
+    run draws without re-receiving the trip data each time."""
+
+    trips_df: pl.DataFrame
+    zones: list[str]
+    policies: dict[str, DispatchPolicy]
+    fleet_size: int
+    abandonment_model: AbandonmentModel
+    config: StudyConfig
+    n_replications: int
+    seed: int
+    metric_fn: Callable[[SimulationResult], float]
+    bin_minutes: int
+    od_time_bin_minutes: int
+    compute_clairvoyant: bool
+    clairvoyant_bin_minutes: float
+    policy_travel_time_model: TravelTimeModel | None
+    intra_zone_params: tuple[float, float] | None
+
+    def simulate(
+        self, policy: DispatchPolicy, models: FittedModels, rng: np.random.Generator
+    ) -> SimulationResult:
+        return run_simulation(
+            self.fleet_size,
+            models.arrival,
+            models.od,
+            models.travel_time,
+            self.abandonment_model,
+            policy,
+            self.config,
+            rng,
+            policy_travel_time_model=self.policy_travel_time_model,
+            boarding_model=models.boarding,
+        )
+
+    def run_draw(self, b: int, resample_indices: np.ndarray) -> _DrawOutcome:
+        models_b = fit_all_models(
+            self.trips_df[resample_indices],
+            bin_minutes=self.bin_minutes,
+            od_time_bin_minutes=self.od_time_bin_minutes,
+            intra_zone_params=self.intra_zone_params,
+        )
+        metrics = {name: np.zeros(self.n_replications) for name in self.policies}
+        cv_metric = np.zeros(self.n_replications) if self.compute_clairvoyant else None
+        cv_excluded = np.zeros(self.n_replications) if self.compute_clairvoyant else None
+
+        for r in range(self.n_replications):
+            if self.compute_clairvoyant:
+                cv_metric[r], cv_excluded[r] = self._clairvoyant(models_b, b, r)
+            for name, policy in self.policies.items():
+                rng = np.random.default_rng(np.random.SeedSequence([self.seed, b, r]))
+                metrics[name][r] = self.metric_fn(self.simulate(policy, models_b, rng))
+
+        return _DrawOutcome(b, metrics, cv_metric, cv_excluded)
+
+    def _clairvoyant(self, models_b: FittedModels, b: int, r: int) -> tuple[float, float]:
+        # Same (seed, b, r) seed as every policy's run, so the same scenario.
+        scenario_rng = np.random.default_rng(np.random.SeedSequence([self.seed, b, r]))
+        scenario = generate_scenario(
+            self.zones,
+            self.config.day_type,
+            models_b.arrival,
+            models_b.od,
+            self.abandonment_model,
+            self.config.horizon_seconds,
+            scenario_rng,
+            self.config.od_bin_minutes,
+            models_b.boarding,
+        )
+        vehicles = [
+            Vehicle(vehicle_id=f"veh-{i}", zone=self.zones[i % len(self.zones)])
+            for i in range(self.fleet_size)
+        ]
+        cv_result = solve_clairvoyant_schedule(
+            scenario.requests,
+            vehicles,
+            models_b.travel_time,
+            self.config.horizon_seconds,
+            self.clairvoyant_bin_minutes,
+        )
+        cv_wait = cv_result.wait_times
+        return (
+            float(cv_wait.mean()) if cv_wait.size else float("inf"),
+            cv_result.fraction_excluded_by_discretization,
+        )
+
+
+_worker_spec: _DrawSpec | None = None
+
+
+def _set_worker_spec(spec: _DrawSpec) -> None:
+    global _worker_spec
+    _worker_spec = spec
+
+
+def _run_draw_in_worker(b: int, resample_indices: np.ndarray) -> _DrawOutcome:
+    return _worker_spec.run_draw(b, resample_indices)
+
+
 def run_ranking_flip_experiment(
     trips_df: pl.DataFrame,
     zones: list[str],
@@ -180,6 +305,9 @@ def run_ranking_flip_experiment(
     compute_clairvoyant: bool = False,
     clairvoyant_bin_minutes: float = 15.0,
     policy_travel_time_model: TravelTimeModel | None = None,
+    intra_zone_params: tuple[float, float] | None = None,
+    n_workers: int = 1,
+    on_draw_done: Callable[[int], None] | None = None,
 ) -> RankingFlipResult:
     """Run the full B x R x |policies| bootstrap-CRN experiment.
 
@@ -226,6 +354,12 @@ def run_ranking_flip_experiment(
     additionally bake a value function / arrival-rate reference into their
     own construction from models fit the *same way* the true scenario is
     — an oracle-forecast confound this parameter exists to break.
+
+    `n_workers > 1` runs bootstrap draws in parallel worker processes.
+    Results are identical to a serial run: every draw's resample indices
+    are still generated in order from one stream in this process, and each
+    (b, r) cell's randomness depends only on its own seed.
+    `on_draw_done(b)` is called as each draw finishes (in completion order).
     """
     policy_names = list(policies.keys())
 
@@ -234,23 +368,34 @@ def run_ranking_flip_experiment(
     _NOMINAL_SENTINEL = 0x4E4F4D31  # "NOM1"
     _RESAMPLE_SENTINEL = 0x52455331  # "RES1"
 
+    draw_spec = _DrawSpec(
+        trips_df=trips_df,
+        zones=zones,
+        policies=policies,
+        fleet_size=fleet_size,
+        abandonment_model=abandonment_model,
+        config=config,
+        n_replications=n_replications,
+        seed=seed,
+        metric_fn=metric_fn,
+        bin_minutes=bin_minutes,
+        od_time_bin_minutes=od_time_bin_minutes,
+        compute_clairvoyant=compute_clairvoyant,
+        clairvoyant_bin_minutes=clairvoyant_bin_minutes,
+        policy_travel_time_model=policy_travel_time_model,
+        intra_zone_params=intra_zone_params,
+    )
+
     nominal_models = fit_all_models(
-        trips_df, bin_minutes=bin_minutes, od_time_bin_minutes=od_time_bin_minutes
+        trips_df,
+        bin_minutes=bin_minutes,
+        od_time_bin_minutes=od_time_bin_minutes,
+        intra_zone_params=intra_zone_params,
     )
     nominal_metric: dict[str, float] = {}
     for name, policy in policies.items():
         rng = np.random.default_rng(np.random.SeedSequence([seed, _NOMINAL_SENTINEL]))
-        result = run_simulation(
-            fleet_size,
-            nominal_models.arrival,
-            nominal_models.od,
-            nominal_models.travel_time,
-            abandonment_model,
-            policy,
-            config,
-            rng,
-            policy_travel_time_model=policy_travel_time_model,
-        )
+        result = draw_spec.simulate(policy, nominal_models, rng)
         nominal_metric[name] = metric_fn(result)
     nominal_ranking = sorted(policy_names, key=lambda name: nominal_metric[name])
 
@@ -259,53 +404,39 @@ def run_ranking_flip_experiment(
     clairvoyant_excluded = np.zeros((n_bootstrap, n_replications)) if compute_clairvoyant else None
     resample_rng = np.random.default_rng(np.random.SeedSequence([seed, _RESAMPLE_SENTINEL]))
 
-    for b in range(n_bootstrap):
-        resampled = bootstrap_resample_trips(trips_df, resample_rng)
-        models_b = fit_all_models(
-            resampled, bin_minutes=bin_minutes, od_time_bin_minutes=od_time_bin_minutes
-        )
-        for r in range(n_replications):
-            if compute_clairvoyant:
-                scenario_rng = np.random.default_rng(np.random.SeedSequence([seed, b, r]))
-                scenario = generate_scenario(
-                    zones,
-                    config.day_type,
-                    models_b.arrival,
-                    models_b.od,
-                    abandonment_model,
-                    config.horizon_seconds,
-                    scenario_rng,
-                    config.od_bin_minutes,
-                )
-                cv_vehicles = [
-                    Vehicle(vehicle_id=f"veh-{i}", zone=zones[i % len(zones)])
-                    for i in range(fleet_size)
-                ]
-                cv_result = solve_clairvoyant_schedule(
-                    scenario.requests,
-                    cv_vehicles,
-                    models_b.travel_time,
-                    config.horizon_seconds,
-                    clairvoyant_bin_minutes,
-                )
-                cv_wait = cv_result.wait_times
-                clairvoyant_metric[b, r] = float(cv_wait.mean()) if cv_wait.size else float("inf")
-                clairvoyant_excluded[b, r] = cv_result.fraction_excluded_by_discretization
+    def store(outcome: _DrawOutcome) -> None:
+        for name in policy_names:
+            metric_by_policy[name][outcome.b] = outcome.metrics[name]
+        if compute_clairvoyant:
+            clairvoyant_metric[outcome.b] = outcome.clairvoyant_metric
+            clairvoyant_excluded[outcome.b] = outcome.clairvoyant_excluded
+        if on_draw_done is not None:
+            on_draw_done(outcome.b)
 
-            for name, policy in policies.items():
-                rng = np.random.default_rng(np.random.SeedSequence([seed, b, r]))
-                result = run_simulation(
-                    fleet_size,
-                    models_b.arrival,
-                    models_b.od,
-                    models_b.travel_time,
-                    abandonment_model,
-                    policy,
-                    config,
-                    rng,
-                    policy_travel_time_model=policy_travel_time_model,
-                )
-                metric_by_policy[name][b, r] = metric_fn(result)
+    def next_indices() -> np.ndarray:
+        return bootstrap_indices(trips_df.height, resample_rng)
+
+    if n_workers <= 1:
+        for b in range(n_bootstrap):
+            store(draw_spec.run_draw(b, next_indices()))
+    else:
+        # `draw_spec` (trip data, policies) is sent once per worker via the
+        # initializer; only the resample indices travel per draw. At most
+        # 2 x n_workers draws are in flight, bounding memory. spawn, not
+        # fork: polars' thread pool deadlocks in forked children.
+        context = multiprocessing.get_context("spawn")
+        with ProcessPoolExecutor(
+            n_workers, mp_context=context, initializer=_set_worker_spec, initargs=(draw_spec,)
+        ) as pool:
+            in_flight: set[Future] = set()
+            for b in range(n_bootstrap):
+                if len(in_flight) >= 2 * n_workers:
+                    done, in_flight = wait(in_flight, return_when=FIRST_COMPLETED)
+                    for future in done:
+                        store(future.result())
+                in_flight.add(pool.submit(_run_draw_in_worker, b, next_indices()))
+            for future in in_flight:
+                store(future.result())
 
     rankings = np.empty((n_bootstrap, len(policy_names)), dtype=int)
     for b in range(n_bootstrap):

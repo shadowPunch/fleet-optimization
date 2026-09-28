@@ -32,6 +32,7 @@ TRIP_RECORD_SCHEMA: dict[str, pl.PolarsDataType] = {
     "origin_zone": pl.Utf8,
     "dest_zone": pl.Utf8,
     "request_ts": pl.Datetime("us"),
+    "on_scene_ts": pl.Datetime("us"),
     "pickup_ts": pl.Datetime("us"),
     "dropoff_ts": pl.Datetime("us"),
     "trip_distance_km": pl.Float64,
@@ -43,7 +44,8 @@ TRIP_RECORD_SCHEMA: dict[str, pl.PolarsDataType] = {
 }
 
 # Nullable in practice: pickup_ts/dropoff_ts/trip_distance_km/fare/driver_pay
-# are absent for cancelled or incomplete trips. request_ts, origin_zone,
+# are absent for cancelled or incomplete trips. on_scene_ts (driver arrived at
+# the pickup point) is optional: only NYC TLC reports it. request_ts, origin_zone,
 # dest_zone, status, and source are required for every row.
 TRIP_RECORD_REQUIRED_COLUMNS = (
     "trip_id",

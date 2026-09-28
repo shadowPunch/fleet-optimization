@@ -398,3 +398,21 @@ def test_validate_mde_scaling_anchor_ratio_is_exactly_one_by_construction():
     assert predicted_values == sorted(predicted_values, reverse=True)
     for n in (2, 4, 6):
         assert result[n]["measured_across_theta_variance"] >= 0.0
+
+
+def test_parallel_draws_reproduce_serial_results_exactly(trips_df):
+    policies = {"B0": NearestIdlePolicy(), "B1": BatchedHungarianPolicy()}
+    config = StudyConfig(zones=ZONES, day_type="all", horizon_seconds=2 * 3600.0)
+    kwargs = dict(
+        trips_df=trips_df, zones=ZONES, policies=policies, fleet_size=20,
+        abandonment_model=AbandonmentModel(mean_patience_seconds=300.0), config=config,
+        n_bootstrap=5, n_replications=2, seed=11,
+    )
+    finished: list[int] = []
+    serial = run_ranking_flip_experiment(**kwargs)
+    parallel = run_ranking_flip_experiment(**kwargs, n_workers=2, on_draw_done=finished.append)
+
+    for name in policies:
+        assert np.array_equal(serial.metric_by_policy[name], parallel.metric_by_policy[name])
+    assert np.array_equal(serial.rankings, parallel.rankings)
+    assert sorted(finished) == list(range(5))

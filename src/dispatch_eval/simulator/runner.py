@@ -17,7 +17,13 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from dispatch_eval.models import AbandonmentModel, NHPPArrivalModel, ODModel, TravelTimeModel
+from dispatch_eval.models import (
+    AbandonmentModel,
+    BoardingModel,
+    NHPPArrivalModel,
+    ODModel,
+    TravelTimeModel,
+)
 from dispatch_eval.policies.base import DispatchPolicy
 from dispatch_eval.scenario import generate_scenario
 from dispatch_eval.simulator.engine import SimulationEngine, SimulationResult
@@ -31,6 +37,7 @@ class StudyConfig:
     horizon_seconds: float
     dispatch_interval_seconds: float = 5.0
     od_bin_minutes: float = 60.0
+    reposition_interval_seconds: float | None = None  # None = every dispatch tick
 
 
 def run_simulation(
@@ -43,6 +50,7 @@ def run_simulation(
     config: StudyConfig,
     rng: np.random.Generator,
     policy_travel_time_model: TravelTimeModel | None = None,
+    boarding_model: BoardingModel | None = None,
 ) -> SimulationResult:
     """`arrival_model`/`od_model`/`travel_time_model` generate the *true*
     world (the scenario, and realized pickup/trip durations).
@@ -63,6 +71,7 @@ def run_simulation(
         config.horizon_seconds,
         rng,
         config.od_bin_minutes,
+        boarding_model,
     )
     vehicles = [
         Vehicle(vehicle_id=f"veh-{i}", zone=config.zones[i % len(config.zones)])
@@ -77,6 +86,7 @@ def run_simulation(
         horizon_seconds=config.horizon_seconds,
         rng=rng,
         dispatch_interval_seconds=config.dispatch_interval_seconds,
+        reposition_interval_seconds=config.reposition_interval_seconds,
         policy_travel_time_model=policy_travel_time_model,
     )
     return engine.run()

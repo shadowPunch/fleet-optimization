@@ -110,6 +110,7 @@ def test_adapt_nyc_tlc_trips_maps_columns():
             "PULocationID": [7, 130],
             "DOLocationID": [234, 122],
             "request_datetime": [datetime(2024, 1, 16, 0, 3), datetime(2024, 1, 16, 0, 4)],
+            "on_scene_datetime": [datetime(2024, 1, 16, 0, 8), datetime(2024, 1, 16, 0, 9)],
             "pickup_datetime": [datetime(2024, 1, 16, 0, 9), datetime(2024, 1, 16, 0, 10)],
             "dropoff_datetime": [datetime(2024, 1, 16, 0, 25), datetime(2024, 1, 16, 0, 20)],
             "trip_miles": [5.0, 2.0],
@@ -120,6 +121,7 @@ def test_adapt_nyc_tlc_trips_maps_columns():
     adapted = adapt_nyc_tlc_trips(raw)
     validate_trip_records(adapted)
     assert adapted["origin_zone"].to_list() == ["7", "130"]
+    assert adapted["on_scene_ts"][0] == datetime(2024, 1, 16, 0, 8)
     assert adapted["status"].unique().to_list() == ["completed"]
     assert adapted["trip_distance_km"][0] == pytest.approx(5.0 * 1.609344)
     assert adapted["source"].unique().to_list() == ["nyc_tlc"]

@@ -75,6 +75,7 @@ class SimulationEngine:
         rng: np.random.Generator,
         dispatch_interval_seconds: float = 5.0,
         policy_travel_time_model: TravelTimeModel | None = None,
+        reposition_interval_seconds: float | None = None,
     ) -> None:
         self.vehicles = {v.vehicle_id: v for v in vehicles}
         self.scenario = scenario
@@ -92,11 +93,16 @@ class SimulationEngine:
         self.horizon_seconds = horizon_seconds
         self.rng = rng
         self.dispatch_interval_seconds = dispatch_interval_seconds
+        # None = reposition on every dispatch tick. Real platforms rebalance
+        # on a slower cadence (minutes), which also keeps B3/B4's solves cheap.
+        self.reposition_interval_seconds = reposition_interval_seconds
+        self._next_reposition_at = 0.0
 
         self._queue: list[Event] = []
         self._seq = count()
         self._scenario_by_id = {r.request_id: r for r in scenario.requests}
         self.requests: dict[str, Request] = {}
+        self._waiting: dict[str, Request] = {}  # arrival order, same as scanning `requests`
         self._completed: list[Request] = []
         self._abandoned: list[Request] = []
 
@@ -163,10 +169,11 @@ class SimulationEngine:
         # WAITING/unassigned state rather than mutating the shared template.
         request = replace(self._scenario_by_id[request_id])
         self.requests[request_id] = request
+        self._waiting[request_id] = request
         self._schedule(request.abandon_at, EventType.ABANDONMENT, request_id=request_id)
 
     def _handle_dispatch_tick(self, event: Event) -> None:
-        waiting = [r for r in self.requests.values() if r.status == RequestStatus.WAITING]
+        waiting = list(self._waiting.values())
         idle = [v for v in self.vehicles.values() if v.status == VehicleStatus.IDLE]
         hour = self._hour_of(event.time)
 
@@ -183,7 +190,9 @@ class SimulationEngine:
         # reconsidered. `self.rng` is passed through rather than letting a
         # policy own its own stream — see RepositioningPolicy's docstring.
         reposition_fn = getattr(self.policy, "reposition", None)
-        if reposition_fn is not None:
+        if reposition_fn is not None and event.time >= self._next_reposition_at:
+            if self.reposition_interval_seconds is not None:
+                self._next_reposition_at = event.time + self.reposition_interval_seconds
             still_idle = [v for v in self.vehicles.values() if v.status == VehicleStatus.IDLE]
             if still_idle:
                 for vehicle_id, target_zone in reposition_fn(
@@ -200,11 +209,14 @@ class SimulationEngine:
         pickup_travel = self.travel_time_model.sample(
             vehicle.zone, request.origin_zone, hour, self.rng
         )
-        pickup_time = current_time + pickup_travel
+        # The vehicle is committed from dispatch until the rider has boarded.
+        request.on_scene_time = current_time + pickup_travel
+        pickup_time = request.on_scene_time + request.boarding_seconds
         vehicle.status = VehicleStatus.EN_ROUTE_PICKUP
         vehicle.assigned_request_id = request_id
         vehicle.available_at = pickup_time
         request.status = RequestStatus.DISPATCHED
+        del self._waiting[request_id]
         request.assigned_vehicle_id = vehicle_id
         self._schedule(pickup_time, EventType.PICKUP, vehicle_id=vehicle_id, request_id=request_id)
 
@@ -245,6 +257,7 @@ class SimulationEngine:
         if request.status != RequestStatus.WAITING:
             return  # already dispatched before patience ran out
         request.status = RequestStatus.ABANDONED
+        del self._waiting[request.request_id]
         self._abandoned.append(request)
 
     def _handle_reposition_arrival(self, event: Event) -> None:

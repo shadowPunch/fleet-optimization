@@ -226,3 +226,32 @@ def test_realized_trip_durations_use_the_true_model_not_the_policy_belief():
     for request in result.completed_requests:
         duration = request.dropoff_time - request.pickup_time
         assert duration < 200.0  # nowhere near the policy's ~9999s belief
+
+
+class _CountingRepositioner:
+    def __init__(self):
+        self.reposition_times: list[float] = []
+
+    def dispatch(self, waiting, idle, current_time, current_hour, travel_time_model):
+        return []
+
+    def reposition(self, idle, current_time, current_hour, travel_time_model, zones, rng):
+        self.reposition_times.append(current_time)
+        return []
+
+
+@pytest.mark.parametrize(
+    ("interval", "expected_calls"), [(None, 121), (60.0, 11)]  # 600s horizon, 5s ticks
+)
+def test_reposition_interval_controls_rebalancing_cadence(interval, expected_calls):
+    arrival_model, od_model, tt_model, ab_model = _uniform_models()
+    config = StudyConfig(
+        zones=ZONES, day_type="all", horizon_seconds=600.0, reposition_interval_seconds=interval
+    )
+    policy = _CountingRepositioner()
+    run_simulation(
+        fleet_size=3, arrival_model=arrival_model, od_model=od_model,
+        travel_time_model=tt_model, abandonment_model=ab_model,
+        policy=policy, config=config, rng=np.random.default_rng(0),
+    )
+    assert len(policy.reposition_times) == expected_calls

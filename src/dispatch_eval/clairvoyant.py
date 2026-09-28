@@ -257,7 +257,11 @@ def solve_clairvoyant_schedule(
         for t in range(t_req, t_abandon + 1):
             origin_node = _grid_node(req.origin_zone, t, n_bins)
             if flow_dict.get(origin_node, {}).get(in_node, 0) > 0:
-                wait_seconds_map[req.request_id] = max(0.0, t * bin_seconds - req.request_time)
+                # Boarding is exogenous: it adds to the rider's wait but can't
+                # change which schedule is optimal, so it's applied here only.
+                wait_seconds_map[req.request_id] = (
+                    max(0.0, t * bin_seconds - req.request_time) + req.boarding_seconds
+                )
                 break
         served_ids.add(req.request_id)
 

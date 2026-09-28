@@ -137,21 +137,22 @@ def test_matching_radius_does_not_shrink_the_solved_cost_matrix(monkeypatch):
     """B1's `matching_radius_seconds` masks unreachable pairs with a large
     cost rather than removing them from the problem — the assignment matrix
     `scipy.optimize.linear_sum_assignment` actually solves is always
-    `max(n_requests, n_idle_vehicles)` square, regardless of the radius. So
+    n_requests x candidate vehicles (see `zone_index`), regardless of the radius. So
     sweeping the radius changes assignment *quality*, not wall-clock
     *latency* — confirmed here directly (matrix shape), not inferred from
     timing, since timing comparisons are inherently noisier.
     """
     import dispatch_eval.policies.batched_hungarian as bh
+    import dispatch_eval.policies.zone_index as zi
 
     seen_shapes = []
-    real_lsa = bh.linear_sum_assignment
+    real_lsa = zi.linear_sum_assignment
 
     def spy(cost):
         seen_shapes.append(cost.shape)
         return real_lsa(cost)
 
-    monkeypatch.setattr(bh, "linear_sum_assignment", spy)
+    monkeypatch.setattr(zi, "linear_sum_assignment", spy)
 
     requests = [
         Request(f"req-{i}", ZONES[i % 3], ZONES[(i + 1) % 3], 0.0, 600.0) for i in range(20)

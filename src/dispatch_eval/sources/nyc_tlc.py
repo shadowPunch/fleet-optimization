@@ -40,6 +40,7 @@ def adapt_nyc_tlc_trips(raw: pl.DataFrame) -> pl.DataFrame:
             pl.col("PULocationID").cast(pl.Utf8).alias("origin_zone"),
             pl.col("DOLocationID").cast(pl.Utf8).alias("dest_zone"),
             pl.col("request_datetime").alias("request_ts"),
+            pl.col("on_scene_datetime").alias("on_scene_ts"),
             pl.col("pickup_datetime").alias("pickup_ts"),
             pl.col("dropoff_datetime").alias("dropoff_ts"),
             (pl.col("trip_miles") * MILES_TO_KM).alias("trip_distance_km"),
