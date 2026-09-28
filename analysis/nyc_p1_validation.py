@@ -1,5 +1,10 @@
 """P1 validation against real data — the actually falsifiable version.
 
+**Superseded (V1).** Kept as the record of the failed first validation; the
+current validation is `dispatch-eval validate` (`studies/validation.py`),
+which fixes the same-zone pickup and boarding defects this run exposed
+(TECHNICAL_REPORT.md §5.5).
+
 Per the 2026-08-04 data-plan amendment (project plan §2,
 `TECHNICAL_REPORT.md`): NYC TLC data is this project's primary
 methodological study, since it's the only source here with real trip-level

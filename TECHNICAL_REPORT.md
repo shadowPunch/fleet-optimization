@@ -928,14 +928,46 @@ Stated together, not scattered through the results:
 
 ## 8. Reproducibility
 
+### The NYC study, end to end
+
+```bash
+uv sync
+uv run dispatch-eval validate          # calibrate + held-out validation  → results/nyc_validation.json (~15 min)
+uv run dispatch-eval eda               # exploratory tables                → results/eda/
+uv run dispatch-eval study --regime tight --workers 8   # one supply regime → results/nyc_study_tight.{json,parquet}
+uv run dispatch-eval report            # every figure + docs/dashboard.html, from results/ only
+```
+
+Scope, split, grids, regimes and budgets all live in `configs/nyc.yaml`.
+The first run downloads the January 2024 TLC file once and caches the
+study window under `data/cache/`.
+
+**Experiment tracking.** Every validation, calibration, EDA and study run
+is a Weights & Biases run in project `fleet-dispatch-eval` (config, seeds,
+per-draw progress, calibration grids, tuning histories, result tables).
+`DISPATCH_WANDB=0` disables tracking; the test suite always runs with it
+off.
+
+**Kaggle.** The four study regimes (~1,000 bootstrap cells each) ran as
+parallel Kaggle CPU kernels: `kaggle/push.sh` uploads a private dataset
+(package wheel, config, cached NYC window, validation result) and pushes
+one script kernel per regime; W&B runs offline there, and
+`kaggle/pull.sh <regime>` downloads the outputs into `results/` and syncs
+the W&B run from a machine with credentials.
+
 ### Test coverage
 
-158 tests across 19 files, all in `tests/`, all passing (`uv run pytest -q`).
-Every test is synthetic-data-only — nothing depends on real NYC/Bengaluru/
-Delhi NCR files being present.
+All tests are in `tests/` and pass (`uv run pytest -q`, ~35s). Every test
+is synthetic-data-only — nothing depends on real NYC/Bengaluru/Delhi NCR
+files being present.
 
 | File | Covers |
 |---|---|
+| `test_zone_index.py` | The zone-level reductions are exact: greedy picks identical to brute force (ties included); batched matching and the transport LP reach the brute-force optimum. |
+| `test_boarding.py` | Boarding fit from `on_scene_ts`, sampling range, wait = approach + boarding in the engine, same-zone pickup parameters. |
+| `test_nyc_study.py` | Clock alignment, wait/approach extraction, same-zone sigma, joint supply calibration and its boundary flag. |
+| `test_policy_study.py` | Ladder construction, equal tuning budgets, paired summaries, per-draw vehicle-equivalents and clipping. |
+| `test_dashboard.py`, `test_tracking.py` | Dashboard payload embedding; tracking disabled is a no-op. |
 | `test_models.py` | `generate_arrival_minutes` never produces an arrival outside its requested window. |
 | `test_engine.py` | Event-loop correctness, undersupply → abandonment, repositioning state transitions, deterministic replay; the `policy_travel_time_model` split; `unresolved_at_horizon` finite-horizon boundary accounting. |
 | `test_scenario.py` | The CRN fix — scenario generation is deterministic, order-independent, full-trace regression. |
@@ -947,7 +979,7 @@ Delhi NCR files being present.
 | `test_fluid_zone_balancing.py` | Apportionment rounding, zero-demand-zone handling, delegation, end-to-end run. |
 | `test_sampling_lookahead.py` | Sampled-lookahead repositioning, edge cases, never repositioning to own zone. |
 | `test_clairvoyant.py` | Same-zone service, infeasible-request handling, multi-request chaining, the pinning-approximation regression, discretization-exclusion diagnostic. |
-| `test_ranking_flip.py` | The full CRN loop; identical policies give identical per-cell metrics; `variance_decomposition` and `variance_decomposition_three_term` recover known variance structure (and agree exactly at a single spec); `indifference_set`; MDE curve; `compute_clairvoyant`'s output. |
+| `test_ranking_flip.py` | The full CRN loop; parallel draws reproduce serial results exactly; secondary metrics; identical policies give identical per-cell metrics; `variance_decomposition` and `variance_decomposition_three_term` recover known variance structure (and agree exactly at a single spec); `indifference_set`; MDE curve; `compute_clairvoyant`'s output. |
 | `test_forecast_degradation.py` | Each degrading function's exact arithmetic; `build_policy_ladder` wiring; end-to-end sweep. |
 | `test_decision_currency.py` | `FleetWaitCurve.invert` interpolation/extrapolation; `decision_currency`'s sign convention. |
 | `test_compute_parity.py` | Latency measurement shapes; the empirical proof `matching_radius_seconds` doesn't shrink the solved matrix. |
@@ -976,8 +1008,9 @@ committed). None require real data except where noted.
 | `coarsening_ladder_close_pair_run.py` | §5.4 — the close pair, 4 rungs. |
 | `c6_bengaluru_grade_run.py` | §5.4 — the 5th, ward-grade rung. |
 | `nyc_reference_comparison.py` | §2's shape-plausibility check (fetches/caches one day of real NYC data). **Requires network access.** |
-| `nyc_p1_validation.py` | §5.5 — the real P1 validation. **Requires network access**, fetches ~14 days of NYC TLC data. |
-| `nyc_p1_ratio_calibration_check.py` | §5.5's ratio-loss follow-up (reuses `nyc_p1_validation.py`'s cached data). |
+| `nyc_p1_validation.py` | §5.5 — validation V1 (superseded by `dispatch-eval validate`, kept as the record of the failed run). **Requires network access**, fetches ~14 days of NYC TLC data. |
+| `nyc_p1_ratio_calibration_check.py` | §5.5's V1 ratio-loss follow-up (reuses `nyc_p1_validation.py`'s cached data). |
+| `nyc/calibration_ridge_check.py` | §5.5 V2 — extends the supply grid on calibration days only. |
 | `decision_currency_run.py` | §5.6 — C3 end-to-end at B=200/R=5. |
 | `compute_parity_sweep.py` | §5.7 — the latency table. |
 | `mde_scaling_component_ablation.py` | §7's MDE component ablation. |
