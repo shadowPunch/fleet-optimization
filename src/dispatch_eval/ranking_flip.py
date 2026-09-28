@@ -323,6 +323,8 @@ def run_ranking_flip_experiment(
     n_workers: int = 1,
     on_draw_done: Callable[[int], None] | None = None,
     draws: range | None = None,
+    checkpoint: Callable[[RankingFlipResult], None] | None = None,
+    checkpoint_every: int = 10,
 ) -> RankingFlipResult:
     """Run the full B x R x |policies| bootstrap-CRN experiment.
 
@@ -383,6 +385,9 @@ def run_ranking_flip_experiment(
     is still advanced through every earlier draw. Rows are then draws
     `draws.start..draws.stop-1`, recorded in `RankingFlipResult.draw_ids`;
     `merge_results` recombines shards.
+
+    `checkpoint(partial_result)` is called every `checkpoint_every` finished
+    draws with the draws completed so far (for runs that may be killed).
     """
     policy_names = list(policies.keys())
 
@@ -436,6 +441,21 @@ def run_ranking_flip_experiment(
     clairvoyant_excluded = np.zeros((n_rows, n_replications)) if compute_clairvoyant else None
     resample_rng = np.random.default_rng(np.random.SeedSequence([seed, _RESAMPLE_SENTINEL]))
 
+    completed: list[int] = []
+
+    def partial_result() -> RankingFlipResult:
+        rows = sorted(b - draws.start for b in completed)
+        metric = {n: metric_by_policy[n][rows] for n in policy_names}
+        return RankingFlipResult(
+            policy_names=policy_names,
+            metric_by_policy=metric,
+            rankings=rank_draws(metric, policy_names),
+            nominal_ranking=nominal_ranking,
+            secondary_metrics={m: {n: a[rows] for n, a in by.items()} for m, by in secondary.items()}
+            or None,
+            draw_ids=np.array(sorted(completed)),
+        )
+
     def store(outcome: _DrawOutcome) -> None:
         row = outcome.b - draws.start
         for name in policy_names:
@@ -445,8 +465,11 @@ def run_ranking_flip_experiment(
         if compute_clairvoyant:
             clairvoyant_metric[row] = outcome.clairvoyant_metric
             clairvoyant_excluded[row] = outcome.clairvoyant_excluded
+        completed.append(outcome.b)
         if on_draw_done is not None:
             on_draw_done(outcome.b)
+        if checkpoint is not None and len(completed) % checkpoint_every == 0:
+            checkpoint(partial_result())
 
     def next_indices() -> np.ndarray:
         return bootstrap_indices(trips_df.height, resample_rng)

@@ -455,3 +455,16 @@ def test_merged_shards_reproduce_a_full_run_exactly(trips_df):
     assert np.array_equal(merged.rankings, full.rankings)
     with pytest.raises(ValueError, match="overlap"):
         merge_results([early, early])
+
+
+def test_checkpoint_receives_completed_draws_periodically(trips_df):
+    config = StudyConfig(zones=ZONES, day_type="all", horizon_seconds=2 * 3600.0)
+    seen: list[list[int]] = []
+    result = run_ranking_flip_experiment(
+        trips_df, ZONES, {"B0": NearestIdlePolicy()}, fleet_size=20,
+        abandonment_model=AbandonmentModel(mean_patience_seconds=300.0), config=config,
+        n_bootstrap=5, n_replications=1, seed=3,
+        checkpoint=lambda partial: seen.append(partial.draw_ids.tolist()), checkpoint_every=2,
+    )
+    assert seen == [[0, 1], [0, 1, 2, 3]]
+    assert result.draw_ids.tolist() == [0, 1, 2, 3, 4]

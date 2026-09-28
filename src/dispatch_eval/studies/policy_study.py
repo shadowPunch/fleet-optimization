@@ -316,6 +316,39 @@ def run_policy_study(
         )
         policies = build_ladder(params, value_function, models.arrival)
 
+        print(f"[{regime}] fleet-equivalence curve for {REFERENCE_POLICY}...", flush=True)
+        curve_sizes = sorted({round(fleet_size * s) for s in study["fleet_curve_scales"]})
+        curve = build_fleet_wait_curve(
+            curve_sizes, models, twin.abandonment, NearestIdlePolicy(), twin.config,
+            study["fleet_curve_replications"], study["seed"],
+        )
+
+        meta = {
+            "regime": regime,
+            "fleet_size": fleet_size,
+            "n_bootstrap": n_bootstrap,
+            "n_replications": study["n_replications"],
+            "policy_names": list(policies),
+            "tuned_params": params.as_dict(),
+            "tuning_best_scores": {name: t.best_score for name, t in tuning.items()},
+            "tuning_infeasible": infeasible,
+            "reference_fraction_served": reference.fraction_served,
+            "fleet_curve": {"fleet_sizes": curve.fleet_sizes,
+                            "mean_wait_seconds": curve.mean_wait_seconds},
+            "horizon_hours": horizon / 3600.0,
+        }
+
+        stem = _shard_stem(regime, draws)
+
+        def save_shard(partial: RankingFlipResult, runtime_minutes: float) -> None:
+            # Also the checkpoint: a killed run still leaves its completed draws
+            # in a mergeable shard file.
+            output_dir.mkdir(parents=True, exist_ok=True)
+            long_table(partial, regime).write_parquet(output_dir / f"{stem}.parquet")
+            shard_meta = {**meta, "nominal_ranking": partial.nominal_ranking,
+                          "runtime_minutes": runtime_minutes, "draws": [draws.start, draws.stop]}
+            (output_dir / f"{stem}.json").write_text(json.dumps(shard_meta, indent=2, default=float))
+
         started = time.time()
         draws_done = 0
 
@@ -344,43 +377,21 @@ def run_policy_study(
             n_workers=n_workers,
             on_draw_done=on_draw_done,
             draws=draws,
+            checkpoint=lambda partial: save_shard(partial, (time.time() - started) / 60),
         )
+        meta["nominal_ranking"] = result.nominal_ranking
 
-        print(f"[{regime}] fleet-equivalence curve for {REFERENCE_POLICY}...", flush=True)
-        curve_sizes = sorted({round(fleet_size * s) for s in study["fleet_curve_scales"]})
-        curve = build_fleet_wait_curve(
-            curve_sizes, models, twin.abandonment, NearestIdlePolicy(), twin.config,
-            study["fleet_curve_replications"], study["seed"],
-        )
 
-        meta = {
-            "regime": regime,
-            "fleet_size": fleet_size,
-            "n_bootstrap": n_bootstrap,
-            "n_replications": study["n_replications"],
-            "policy_names": result.policy_names,
-            "nominal_ranking": result.nominal_ranking,
-            "tuned_params": params.as_dict(),
-            "tuning_best_scores": {name: t.best_score for name, t in tuning.items()},
-            "tuning_infeasible": infeasible,
-            "reference_fraction_served": reference.fraction_served,
-            "fleet_curve": {"fleet_sizes": curve.fleet_sizes,
-                            "mean_wait_seconds": curve.mean_wait_seconds},
-            "horizon_hours": horizon / 3600.0,
-            "runtime_minutes": (time.time() - started) / 60,
-        }
+        meta["runtime_minutes"] = (time.time() - started) / 60
 
         if len(draws) < n_bootstrap:
-            output_dir.mkdir(parents=True, exist_ok=True)
-            stem = _shard_stem(regime, draws)
-            long_table(result, regime).write_parquet(output_dir / f"{stem}.parquet")
-            (output_dir / f"{stem}.json").write_text(
-                json.dumps({**meta, "draws": [draws.start, draws.stop]}, indent=2, default=float)
-            )
+            save_shard(result, meta["runtime_minutes"])
             print(f"[{regime}] wrote shard {stem}; combine with `dispatch-eval merge`")
             return meta
 
         summary = finalize_study(meta, result, output_dir)
+        for suffix in (".json", ".parquet"):  # the full run supersedes its checkpoint
+            (output_dir / f"{stem}{suffix}").unlink(missing_ok=True)
         run.log_table("policy_summary", [
             {k: (json.dumps(v) if isinstance(v, tuple | list) else v) for k, v in p.items()}
             for p in summary["policies"]
