@@ -2,7 +2,8 @@
 # Build the inputs dataset and push one study kernel per regime to Kaggle.
 # Usage: kaggle/push.sh [n_bootstrap]   (default: the config's n_bootstrap)
 # Env: REGIMES="tight mid" to push only some regimes; SKIP_DATASET=1 to reuse
-# the already-uploaded inputs dataset; SHARDS="0:100 100:200" to split each
+# the already-uploaded inputs dataset (only when src/ is unchanged since that
+# upload: the kernels install the package wheel from it); SHARDS="0:100 100:200" to split each
 # regime into one kernel per draw range (merge with `dispatch-eval merge`).
 set -euo pipefail
 cd "$(dirname "$0")/.."
