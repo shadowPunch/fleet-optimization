@@ -184,11 +184,11 @@ def _load_studies(results_dir: Path) -> dict[str, dict]:
 
 
 def _per_regime_panels(studies: dict[str, dict], value, interval, xlabel: str, title: str,
-                       fmt: str, path: Path) -> Path:
+                       label, path: Path) -> Path:
     regimes = list(studies)
     policies = [p for p in POLICY_LABELS if p != "greedy"]
-    fig, axes = plt.subplots(1, len(regimes), figsize=(3.1 * len(regimes), 3.4), sharey=True,
-                             squeeze=False)
+    fig, axes = plt.subplots(1, len(regimes), figsize=(3.0 + 2.8 * len(regimes), 3.6),
+                             sharey=True, squeeze=False, layout="constrained")
     for ax, regime in zip(axes[0], regimes, strict=True):
         s = studies[regime]
         for i, name in enumerate(policies):
@@ -196,7 +196,7 @@ def _per_regime_panels(studies: dict[str, dict], value, interval, xlabel: str, t
             ax.errorbar(v, i, xerr=[[v - lo], [hi - v]], fmt="o", color=POLICY_COLORS[name],
                         markersize=7, markeredgecolor=SURFACE, markeredgewidth=1.5, elinewidth=2,
                         capsize=0)
-            ax.annotate(fmt.format(v), (hi, i), textcoords="offset points", xytext=(5, 0),
+            ax.annotate(label(s, name, v), (hi, i), textcoords="offset points", xytext=(5, 0),
                         va="center", fontsize=8, color=TEXT_MUTED)
         ax.axvline(0, color=BASELINE, linewidth=1)
         ax.set_title(f"{regime}  ·  {s['fleet_size']:,} cars", fontsize=10)
@@ -206,7 +206,6 @@ def _per_regime_panels(studies: dict[str, dict], value, interval, xlabel: str, t
     axes[0][0].invert_yaxis()
     fig.suptitle(title, x=0.01, ha="left", fontweight="bold", fontsize=12, color=TEXT)
     fig.supxlabel(xlabel, fontsize=10, color=TEXT_MUTED)
-    fig.tight_layout()
     return _save(fig, path)
 
 
@@ -225,7 +224,8 @@ def policy_gains(studies: dict[str, dict], out: Path) -> Path:
 
     return _per_regime_panels(
         studies, pct, pct_ci, "Wait reduction vs greedy (%)",
-        "Wait-time reduction vs greedy dispatch, 95% bootstrap intervals", "{:.1f}%",
+        "Wait-time reduction vs greedy dispatch, 95% bootstrap intervals",
+        lambda s, n, v: f"{v:.1f}%",
         out / "policy_gains.png",
     )
 
@@ -236,7 +236,10 @@ def vehicles_worth(studies: dict[str, dict], out: Path) -> Path:
         lambda s, n: s["vehicles_worth"][n]["vehicles_worth_mean"],
         lambda s, n: tuple(s["vehicles_worth"][n]["vehicles_worth_ci"]),
         "Extra cars greedy would need",
-        "Each algorithm's gain priced in vehicles (fleet-equivalent vs greedy)", "{:,.0f}",
+        "Each algorithm's gain priced in vehicles (fleet-equivalent vs greedy)",
+        # Beyond greedy's measured fleet curve the figure is a lower bound.
+        lambda s, n, v: ("≥ " if s["vehicles_worth"][n]["fraction_draws_lower_bound"] > 0 else "")
+        + f"{v:,.0f}",
         out / "vehicles_worth.png",
     )
 
