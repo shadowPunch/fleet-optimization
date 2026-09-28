@@ -416,3 +416,16 @@ def test_parallel_draws_reproduce_serial_results_exactly(trips_df):
         assert np.array_equal(serial.metric_by_policy[name], parallel.metric_by_policy[name])
     assert np.array_equal(serial.rankings, parallel.rankings)
     assert sorted(finished) == list(range(5))
+
+
+def test_secondary_metrics_are_recorded_per_cell(trips_df):
+    config = StudyConfig(zones=ZONES, day_type="all", horizon_seconds=2 * 3600.0)
+    result = run_ranking_flip_experiment(
+        trips_df, ZONES, {"B0": NearestIdlePolicy()}, fleet_size=20,
+        abandonment_model=AbandonmentModel(mean_patience_seconds=300.0), config=config,
+        n_bootstrap=2, n_replications=2, seed=3,
+        secondary_metric_fns={"served": lambda r: r.fraction_served},
+    )
+    served = result.secondary_metrics["served"]["B0"]
+    assert served.shape == (2, 2)
+    assert np.all((served > 0) & (served <= 1))

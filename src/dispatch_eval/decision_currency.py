@@ -102,6 +102,7 @@ def build_fleet_wait_curve(
                 policy,
                 config,
                 rng,
+                boarding_model=models.boarding,
             )
             per_rep.append(result.mean_wait_seconds)
         means.append(float(np.mean(per_rep)))

@@ -28,6 +28,28 @@ def _validate(args: argparse.Namespace) -> None:
     _write_json(report, args.output)
 
 
+def _study(args: argparse.Namespace) -> None:
+    from dispatch_eval.studies.policy_study import run_policy_study
+
+    validation = json.loads(args.validation.read_text())
+    summary = run_policy_study(
+        _load_config(args.config), args.regime, validation, args.output_dir, args.workers,
+        args.n_bootstrap,
+    )
+    print(json.dumps({k: v for k, v in summary.items() if k != "policies"}, indent=2, default=float))
+
+
+def _eda(args: argparse.Namespace) -> None:
+    from dispatch_eval.studies.eda import run_eda
+    from dispatch_eval.tracking import tracked_run
+
+    cfg = _load_config(args.config)
+    with tracked_run("nyc-eda", "eda", cfg, tags=["nyc", "eda"]) as run:
+        summary = run_eda(cfg, args.output_dir)
+        run.summary.update(summary)
+    print(json.dumps(summary, indent=2, default=float))
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="dispatch-eval", description=__doc__)
     sub = parser.add_subparsers(required=True)
@@ -36,6 +58,20 @@ def main() -> None:
     validate.add_argument("--config", type=Path, default=Path("configs/nyc.yaml"))
     validate.add_argument("--output", type=Path, default=Path("results/nyc_validation.json"))
     validate.set_defaults(func=_validate)
+
+    study = sub.add_parser("study", help="tune and compare the policy ladder on the NYC twin")
+    study.add_argument("--config", type=Path, default=Path("configs/nyc.yaml"))
+    study.add_argument("--regime", default="calibrated", help="a key under study.regimes")
+    study.add_argument("--validation", type=Path, default=Path("results/nyc_validation.json"))
+    study.add_argument("--output-dir", type=Path, default=Path("results"))
+    study.add_argument("--workers", type=int, default=1)
+    study.add_argument("--n-bootstrap", type=int, default=None, help="override the config")
+    study.set_defaults(func=_study)
+
+    eda = sub.add_parser("eda", help="exploratory tables for the NYC study window")
+    eda.add_argument("--config", type=Path, default=Path("configs/nyc.yaml"))
+    eda.add_argument("--output-dir", type=Path, default=Path("results/eda"))
+    eda.set_defaults(func=_eda)
 
     args = parser.parse_args()
     args.func(args)

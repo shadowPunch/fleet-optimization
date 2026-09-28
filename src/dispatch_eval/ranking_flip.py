@@ -121,6 +121,8 @@ class RankingFlipResult:
     nominal_ranking: list[str]  # ranking fit on the un-resampled data
     clairvoyant_metric_by_draw: np.ndarray | None = None  # shape (n_bootstrap, n_replications)
     clairvoyant_fraction_excluded: np.ndarray | None = None  # same shape; see clairvoyant.py
+    # metric name -> policy -> (n_bootstrap, n_replications); recorded, not ranked on
+    secondary_metrics: dict[str, dict[str, np.ndarray]] | None = None
 
     def fraction_of_gap_closed(self, baseline_policy: str) -> dict[str, np.ndarray]:
         """B5's own normalization (project plan, B5 section): every policy's
@@ -184,6 +186,7 @@ def _mean_wait_seconds(result: SimulationResult) -> float:
 class _DrawOutcome:
     b: int
     metrics: dict[str, np.ndarray]  # policy -> shape (n_replications,)
+    secondary: dict[str, dict[str, np.ndarray]]  # metric -> policy -> (n_replications,)
     clairvoyant_metric: np.ndarray | None
     clairvoyant_excluded: np.ndarray | None
 
@@ -202,6 +205,7 @@ class _DrawSpec:
     n_replications: int
     seed: int
     metric_fn: Callable[[SimulationResult], float]
+    secondary_metric_fns: dict[str, Callable[[SimulationResult], float]]
     bin_minutes: int
     od_time_bin_minutes: int
     compute_clairvoyant: bool
@@ -233,6 +237,10 @@ class _DrawSpec:
             intra_zone_params=self.intra_zone_params,
         )
         metrics = {name: np.zeros(self.n_replications) for name in self.policies}
+        secondary = {
+            m: {name: np.zeros(self.n_replications) for name in self.policies}
+            for m in self.secondary_metric_fns
+        }
         cv_metric = np.zeros(self.n_replications) if self.compute_clairvoyant else None
         cv_excluded = np.zeros(self.n_replications) if self.compute_clairvoyant else None
 
@@ -241,9 +249,12 @@ class _DrawSpec:
                 cv_metric[r], cv_excluded[r] = self._clairvoyant(models_b, b, r)
             for name, policy in self.policies.items():
                 rng = np.random.default_rng(np.random.SeedSequence([self.seed, b, r]))
-                metrics[name][r] = self.metric_fn(self.simulate(policy, models_b, rng))
+                result = self.simulate(policy, models_b, rng)
+                metrics[name][r] = self.metric_fn(result)
+                for m, fn in self.secondary_metric_fns.items():
+                    secondary[m][name][r] = fn(result)
 
-        return _DrawOutcome(b, metrics, cv_metric, cv_excluded)
+        return _DrawOutcome(b, metrics, secondary, cv_metric, cv_excluded)
 
     def _clairvoyant(self, models_b: FittedModels, b: int, r: int) -> tuple[float, float]:
         # Same (seed, b, r) seed as every policy's run, so the same scenario.
@@ -306,6 +317,7 @@ def run_ranking_flip_experiment(
     clairvoyant_bin_minutes: float = 15.0,
     policy_travel_time_model: TravelTimeModel | None = None,
     intra_zone_params: tuple[float, float] | None = None,
+    secondary_metric_fns: dict[str, Callable[[SimulationResult], float]] | None = None,
     n_workers: int = 1,
     on_draw_done: Callable[[int], None] | None = None,
 ) -> RankingFlipResult:
@@ -360,6 +372,8 @@ def run_ranking_flip_experiment(
     are still generated in order from one stream in this process, and each
     (b, r) cell's randomness depends only on its own seed.
     `on_draw_done(b)` is called as each draw finishes (in completion order).
+    `secondary_metric_fns` (e.g. fraction served) are recorded per cell in
+    `RankingFlipResult.secondary_metrics` but play no part in ranking.
     """
     policy_names = list(policies.keys())
 
@@ -378,6 +392,7 @@ def run_ranking_flip_experiment(
         n_replications=n_replications,
         seed=seed,
         metric_fn=metric_fn,
+        secondary_metric_fns=secondary_metric_fns or {},
         bin_minutes=bin_minutes,
         od_time_bin_minutes=od_time_bin_minutes,
         compute_clairvoyant=compute_clairvoyant,
@@ -400,6 +415,10 @@ def run_ranking_flip_experiment(
     nominal_ranking = sorted(policy_names, key=lambda name: nominal_metric[name])
 
     metric_by_policy = {name: np.zeros((n_bootstrap, n_replications)) for name in policy_names}
+    secondary = {
+        m: {name: np.zeros((n_bootstrap, n_replications)) for name in policy_names}
+        for m in draw_spec.secondary_metric_fns
+    }
     clairvoyant_metric = np.zeros((n_bootstrap, n_replications)) if compute_clairvoyant else None
     clairvoyant_excluded = np.zeros((n_bootstrap, n_replications)) if compute_clairvoyant else None
     resample_rng = np.random.default_rng(np.random.SeedSequence([seed, _RESAMPLE_SENTINEL]))
@@ -407,6 +426,8 @@ def run_ranking_flip_experiment(
     def store(outcome: _DrawOutcome) -> None:
         for name in policy_names:
             metric_by_policy[name][outcome.b] = outcome.metrics[name]
+            for m in secondary:
+                secondary[m][name][outcome.b] = outcome.secondary[m][name]
         if compute_clairvoyant:
             clairvoyant_metric[outcome.b] = outcome.clairvoyant_metric
             clairvoyant_excluded[outcome.b] = outcome.clairvoyant_excluded
@@ -450,6 +471,7 @@ def run_ranking_flip_experiment(
         clairvoyant_fraction_excluded=clairvoyant_excluded,
         rankings=rankings,
         nominal_ranking=nominal_ranking,
+        secondary_metrics=secondary or None,
     )
 
 
