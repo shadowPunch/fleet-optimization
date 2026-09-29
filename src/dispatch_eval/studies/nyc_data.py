@@ -4,7 +4,7 @@ The study window is Manhattan-only Uber (HV0003) trips on January 2024
 weekdays, 12:00-18:00, split by day into a calibration set and a held-out
 set that is never touched while fitting. Scope and split are fixed in
 `configs/nyc.yaml` and were chosen before any validation was run (see
-TECHNICAL_REPORT.md §5.5).
+TECHNICAL_DOCUMENTATION.md §5.5).
 """
 
 from __future__ import annotations

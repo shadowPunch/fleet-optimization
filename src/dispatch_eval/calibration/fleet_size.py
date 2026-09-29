@@ -38,7 +38,7 @@ def absolute_moment_loss(simulated_wait: np.ndarray, observed_median: float, obs
     Asks the calibration to land on both the right *scale* and the right
     *shape* at once. When a simulator's dispatch mechanism produces a
     wait-time distribution with a fundamentally different shape than
-    reality (see `TECHNICAL_REPORT.md`: simulated P90/median ratio
+    reality (see `TECHNICAL_DOCUMENTATION.md`: simulated P90/median ratio
     far from real, no fleet size closes it), no candidate can satisfy both
     halves of this loss simultaneously — the search still returns
     *something*, but it's a compromise between two things pulling in

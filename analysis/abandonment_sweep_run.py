@@ -2,14 +2,14 @@
 sweep as the structural stratum, run as an outer loop around the existing
 P3 bootstrap.
 
-`TECHNICAL_REPORT.md` already commits to treating the abandonment
+`TECHNICAL_DOCUMENTATION.md` already commits to treating the abandonment
 hazard as structural, not fit: "fleet size and the abandonment hazard are
 not jointly identified from matched-trip data alone... `mean_patience_seconds
 ∈ {60, 180, 300, 600, 900}`... any P3 conclusion that holds across all five
 is reported as robust; any that doesn't is itself a finding." What was
 missing was folding that sweep into `variance_decomposition`'s own
 arithmetic — every `input_uncertainty_ratio` reported so far
-(`TECHNICAL_REPORT.md`, `run_study.py`) only ever varied the
+(`TECHNICAL_DOCUMENTATION.md`, `run_study.py`) only ever varied the
 bootstrap draw at one *fixed* abandonment spec, so it was a floor on input
 uncertainty's contribution, not an estimate (its own docstring said so).
 This runs `run_ranking_flip_experiment` once per pre-registered spec and
@@ -52,7 +52,7 @@ N_BOOTSTRAP = 25
 N_REPLICATIONS = 4
 SEED = 23
 
-# Pre-registered sweep (TECHNICAL_REPORT.md): 1, 3, 5, 10, 15 minutes.
+# Pre-registered sweep (TECHNICAL_DOCUMENTATION.md): 1, 3, 5, 10, 15 minutes.
 ABANDONMENT_SPECS = [60.0, 180.0, 300.0, 600.0, 900.0]
 TRACKED_PAIR = ("B2_value_corrected", "B0_nearest_idle")  # (a, b) for variance_decomposition's diff = a - b
 

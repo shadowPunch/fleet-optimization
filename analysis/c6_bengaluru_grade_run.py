@@ -2,7 +2,7 @@
 Yatri-grade observability specifically — ward-level zones and trip-only
 timestamps, not just coarser time/OD binning. No real Bengaluru data
 required or used; this measures what the *resolution* itself costs,
-independent of ever obtaining that data (see TECHNICAL_REPORT.md §2 for
+independent of ever obtaining that data (see TECHNICAL_DOCUMENTATION.md §2 for
 why Bengaluru access has stayed C6-applicability-only throughout).
 
 The coarsening ladder's existing rungs (`coarsening_ladder.py`) already

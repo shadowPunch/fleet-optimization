@@ -8,6 +8,9 @@ the dashboard shows exactly what the result files contain.
 from __future__ import annotations
 
 import json
+import shutil
+import subprocess
+import tempfile
 from datetime import date
 from pathlib import Path
 
@@ -73,3 +76,31 @@ def build_dashboard(results_dir: Path, output: Path) -> Path:
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(template.replace(PLACEHOLDER, payload))
     return output
+
+
+CHROME_NAMES = ("google-chrome", "chromium", "chromium-browser", "chrome")
+
+
+def export_pdf(dashboard_html: Path, pdf: Path) -> Path:
+    """Print the dashboard to an A4 PDF (light theme) with headless Chrome.
+
+    The page is authored as a body fragment for the artifact host, so it is
+    wrapped in a full document pinned to the light theme before printing.
+    """
+    chrome = next((path for name in CHROME_NAMES if (path := shutil.which(name))), None)
+    if chrome is None:
+        raise RuntimeError(f"PDF export needs one of {CHROME_NAMES} on PATH")
+    with tempfile.TemporaryDirectory() as tmp:
+        page = Path(tmp) / "dashboard.html"
+        page.write_text(
+            '<!doctype html><html data-theme="light"><head><meta charset="utf-8">'
+            '<meta name="viewport" content="width=device-width,initial-scale=1"></head>'
+            f'<body style="margin:0">{dashboard_html.read_text()}</body></html>'
+        )
+        subprocess.run(
+            [chrome, "--headless=new", "--disable-gpu", "--no-sandbox",
+             "--virtual-time-budget=10000", "--no-pdf-header-footer",
+             f"--print-to-pdf={pdf.resolve()}", page.as_uri()],
+            check=True, capture_output=True,
+        )
+    return pdf

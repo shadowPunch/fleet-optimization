@@ -2,7 +2,7 @@
 
 Source: `shayanzk/ola-ride-bookings-dataset` on Kaggle. Treated as
 **synthetic, not real operational data** — see section 2 of
-TECHNICAL_REPORT.md for why (no disclosed data-generating
+TECHNICAL_DOCUMENTATION.md for why (no disclosed data-generating
 process, Ola/Uber don't publish real trip microdata for India, and the shape
 matches generic Kaggle BI-practice datasets). Use it as a structural
 test-bed for the harness, never as evidence about real Delhi ride-hailing.

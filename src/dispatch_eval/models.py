@@ -126,7 +126,7 @@ class FareModel:
     """Fare as a linear function of distance and duration, plus a driver-pay split.
 
     The driver-pay fraction is a modeling assumption, not a fitted quantity —
-    see TECHNICAL_REPORT.md ("Driver pay" row) for why it can't be
+    see TECHNICAL_DOCUMENTATION.md ("Driver pay" row) for why it can't be
     fit from either data source. Defaults to 1.0, matching Namma Yatri's own
     stated zero-commission policy (the project's real target platform) —
     not NYC TLC's ~0.72-0.75, which was checked against real data and found

@@ -7,7 +7,7 @@ Source: OpenCity's "Bengaluru Housing and Houselisting Data, Census 2011"
 file (has a real `Ward No` column, unlike the sibling "Household Assets"
 resource on the same OpenCity dataset page, which turned out to be
 district/tehsil/village-level despite its name — checked directly, not
-assumed; see TECHNICAL_REPORT.md).
+assumed; see TECHNICAL_DOCUMENTATION.md).
 
 **A different variable type than `ward_crosswalk.py` handles, requiring
 different interpolation logic, found while building this**: every column

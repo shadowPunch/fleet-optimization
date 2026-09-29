@@ -1,6 +1,6 @@
 """Areal-interpolation crosswalk between administrative boundary eras.
 
-Ward boundaries are redrawn periodically (see TECHNICAL_REPORT.md for
+Ward boundaries are redrawn periodically (see TECHNICAL_DOCUMENTATION.md for
 Bengaluru's specific history: ~198 wards at the 2011 Census, 243 in a 2022
 delimitation, 225 in 2023, 369 under the September 2025 Greater Bengaluru
 Authority restructuring). Any dataset tabulated against an older boundary
@@ -16,7 +16,7 @@ overlap covers. This assumes the attribute (e.g. population) is uniformly
 distributed within each source polygon, which is never exactly true — it is
 a documented approximation, not an exact reallocation, and its error should
 be reported alongside any result that depends on it (see
-`interpolation_error`, and `TECHNICAL_REPORT.md`).
+`interpolation_error`, and `TECHNICAL_DOCUMENTATION.md`).
 
 Where an authoritative official reallocation already exists for a variable
 (as it does for Bengaluru's total/SC/ST population — the GBA's own 2025

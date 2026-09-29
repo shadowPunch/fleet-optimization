@@ -1,10 +1,10 @@
 """Which sub-model's refit-from-less-data behavior breaks the MDE curve's
 1/n_days assumption?
 
-`TECHNICAL_REPORT.md` found real across-theta variance shrinking
+`TECHNICAL_DOCUMENTATION.md` found real across-theta variance shrinking
 *faster* than 1/n_days as n_days drops (e.g. only 18% of the 1/n-predicted
 variance at n_days=3) and named two candidate causes, neither confirmed:
-the NHPP arrival fit's unsmoothed zero-fallback (`TECHNICAL_REPORT.md`
+the NHPP arrival fit's unsmoothed zero-fallback (`TECHNICAL_DOCUMENTATION.md`
 already flagged this asymmetry against the OD fit's Dirichlet smoothing) or
 simply that `fit_all_models` jointly refits four sub-models from the same
 `n_days` at once, not the single-parameter estimator the classical 1/n
@@ -50,7 +50,7 @@ from dispatch_eval.sources.synthetic import generate_synthetic_trips
 OUTPUT_PATH = Path(__file__).parent / "cache" / "mde_scaling_component_ablation_results.json"
 RAW_CHECKPOINT_PATH = Path(__file__).parent / "cache" / "mde_scaling_component_ablation_raw.json"
 
-# Matches the run documented in TECHNICAL_REPORT.md §7 exactly, so results are comparable.
+# Matches the run documented in TECHNICAL_DOCUMENTATION.md §7 exactly, so results are comparable.
 ZONES = ["A", "B", "C", "D", "E"]
 FLEET_SIZE = 30
 HORIZON_SECONDS = 6 * 3600.0
@@ -146,7 +146,7 @@ def main() -> None:
             RAW_CHECKPOINT_PATH.parent.mkdir(parents=True, exist_ok=True)
             RAW_CHECKPOINT_PATH.write_text(json.dumps(results, indent=2))
 
-    # Same 1/n-line-anchored-at-largest-n comparison TECHNICAL_REPORT.md uses.
+    # Same 1/n-line-anchored-at-largest-n comparison TECHNICAL_DOCUMENTATION.md uses.
     summary = {}
     for component in COMPONENTS:
         anchor_variance = results[component][ANCHOR_N_DAYS]
@@ -174,7 +174,7 @@ def main() -> None:
         for n_days in CANDIDATE_N_DAYS:
             row += f"{summary[component][n_days]['ratio_measured_to_predicted']:<10.3f}"
         print(row)
-    print("\n(all four jointly, from TECHNICAL_REPORT.md: n=3:0.18  n=6:0.31  n=12:0.41  n=24:1.00)")
+    print("\n(all four jointly, from TECHNICAL_DOCUMENTATION.md: n=3:0.18  n=6:0.31  n=12:0.41  n=24:1.00)")
     print(f"\nWrote {OUTPUT_PATH}")
 
 

@@ -84,6 +84,19 @@ tr:last-child td { border-bottom: 0; }
 .notes b { color: var(--ink); font-weight: 600; }
 footer { color: var(--faint); font-size: 12px; border-top: 1px solid var(--rule); padding-top: 14px; }
 @media (prefers-reduced-motion: no-preference) { .seg button { transition: background .15s, color .15s; } }
+@page { size: A4; margin: 14mm 12mm; }
+@media print {
+  :root, :root[data-theme] { --bg: #ffffff; --panel: #ffffff; }
+  .page { max-width: none; padding-inline: 0; padding-block: 0; gap: 28px; }
+  .stats { grid-template-columns: repeat(4, 1fr); }
+  .table-wrap { overflow: visible; }
+  table { font-size: 10.5px; }
+  th, td { padding: 6px 7px; white-space: normal; }
+  th { font-size: 9.5px; }
+  figure, .table-wrap, .stats, .section-head { break-inside: avoid; }
+  .section-head { break-after: avoid; }
+  .tip, .toggle { display: none !important; }
+}
 </style>
 
 <div class="page">

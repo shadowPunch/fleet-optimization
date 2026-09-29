@@ -1,7 +1,7 @@
 """A within-mechanism sweep: B2 (value-corrected Hungarian) at several
 `value_weight` settings, compared against *each other* — not against a
 different dispatch mechanism, unlike every comparison in
-`TECHNICAL_REPORT.md`, all of which found no indifference.
+`TECHNICAL_DOCUMENTATION.md`, all of which found no indifference.
 
 The hypothesis this checks: indifference might not show up between
 different *mechanisms* (already checked, four times, always no), but

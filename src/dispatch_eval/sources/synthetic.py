@@ -9,7 +9,7 @@ claim about a real city.
 
 Abandoned requests are folded into "cancelled_customer" in the emitted
 records, matching the same observability constraint real sources have (see
-TECHNICAL_REPORT.md): the point of this project is that the
+TECHNICAL_DOCUMENTATION.md): the point of this project is that the
 abandonment hazard isn't identified from data like this, so the synthetic
 test-bed shouldn't leak the answer either.
 

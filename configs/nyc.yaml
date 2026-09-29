@@ -1,5 +1,5 @@
 # NYC TLC study: Manhattan-only Uber (HV0003), January 2024 weekdays.
-# Scope and split fixed before any validation was run (TECHNICAL_REPORT.md §5.5).
+# Scope and split fixed before any validation was run (TECHNICAL_DOCUMENTATION.md §5.5).
 data:
   month: "2024-01"
   operator: HV0003
@@ -37,7 +37,7 @@ study:
   # Tuning constraint: serve >= greedy's fraction of riders minus this.
   service_tolerance: 0.005
   # Wait-time data bounds supply from below only: every fleet of ~4,000+
-  # reproduces the calibration days at KS <= 0.10 (TECHNICAL_REPORT.md §5.5),
+  # reproduces the calibration days at KS <= 0.10 (TECHNICAL_DOCUMENTATION.md §5.5),
   # so the study spans that data-consistent range instead of one point.
   # Same-zone pickup medians are the calibration-grid optimum at each fleet.
   regimes:

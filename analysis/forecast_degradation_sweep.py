@@ -1,7 +1,7 @@
 """Does the B0-B4 ladder's clean separation survive giving policies a
 realistic (imperfect) forecast instead of an oracle one?
 
-Every prior rigorous comparison in this project (`TECHNICAL_REPORT.md`)
+Every prior rigorous comparison in this project (`TECHNICAL_DOCUMENTATION.md`)
 found B2 cleanly winning, no indifference between mechanisms — but every
 one of those runs let B2-B4 forecast the world through models fit the
 *same way*, on the *same kind of data*, as the model that generated the
@@ -25,7 +25,7 @@ closest analog to a real deployment's crude, hand-built forecast.
 found zero erosion from the other three in isolation: none of them touch
 *spatial* signal (which zone is relatively busier), only temporal/
 conditional/variance detail, leaving open whether that's what the
-ladder's separation actually runs on. See TECHNICAL_REPORT.md.
+ladder's separation actually runs on. See TECHNICAL_DOCUMENTATION.md.
 
 Usage: uv run python analysis/forecast_degradation_sweep.py
 """

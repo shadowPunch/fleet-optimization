@@ -6,8 +6,8 @@ means the simulator, calibration routines, and tests never need to know which
 city or which adapter produced the data.
 
 Two shapes, not one, because the two real data sources are not interchangeable
-(see TECHNICAL_REPORT.md, section 2, and
-TECHNICAL_REPORT.md):
+(see TECHNICAL_DOCUMENTATION.md, section 2, and
+TECHNICAL_DOCUMENTATION.md):
 
 - ``TRIP_RECORD_SCHEMA`` — one row per trip. Only the Delhi NCR synthetic
   source and the synthetic generator produce this.

@@ -18,7 +18,7 @@ non-negotiable — it's what makes the paired comparison sharp. This module
 gets it for free from two things already fixed/built earlier in the
 project: `scenario.generate_scenario` makes the realized request trace
 depend only on the fitted models and an rng seed, never on which policy is
-running (see TECHNICAL_REPORT.md's note on the CRN bug); and re-seeding a fresh
+running (see TECHNICAL_DOCUMENTATION.md's note on the CRN bug); and re-seeding a fresh
 `np.random.Generator` with the same value for every policy at a given
 (b, r) makes the *rest* of the randomness (travel-time realizations) shared
 too, up to the point where different policies make different decisions.
@@ -601,7 +601,7 @@ def variance_decomposition_three_term(
 
     `metric_a_by_spec`/`metric_b_by_spec` map each pre-registered
     abandonment-hazard specification (`mean_patience_seconds`,
-    `TECHNICAL_REPORT.md`: `{60, 180, 300, 600, 900}`, "a structural
+    `TECHNICAL_DOCUMENTATION.md`: `{60, 180, 300, 600, 900}`, "a structural
     axis to sweep, not fit") to that spec's own `metric_by_policy` array
     (shape `(n_bootstrap, n_replications)`) from a `RankingFlipResult` run
     with that `AbandonmentModel` — the abandonment sweep as the outer loop
@@ -635,7 +635,7 @@ def variance_decomposition_three_term(
     to treating as unfit/structural. Model-family misspecification
     (arrival/OD/travel-time functional form) is a separate structural
     question, checked separately by `forecast_degradation.py`
-    (`TECHNICAL_REPORT.md`) and not folded in here.
+    (`TECHNICAL_DOCUMENTATION.md`) and not folded in here.
     """
     specs = sorted(metric_a_by_spec)
     if sorted(metric_b_by_spec) != specs:

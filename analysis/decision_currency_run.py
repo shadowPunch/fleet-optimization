@@ -9,7 +9,7 @@ time into "worth N vehicles relative to B0" via `decision_currency` —
 `RankingFlipResult`/`FittedModels` C3 needs to invert a fleet-wait curve,
 so this reruns the pipeline rather than reading the parquet back.
 
-This has never been run against real data before (`TECHNICAL_REPORT.md`:
+This has never been run against real data before (`TECHNICAL_DOCUMENTATION.md`:
 the NYC twin fails its own pre-registered wait-time KS threshold), so this
 is a synthetic-data confirmatory result, not a real-Manhattan one — stated
 here rather than implied.
@@ -110,7 +110,7 @@ def main() -> None:
         "actual_fleet_size": fleet_calibration.fleet_size,
         "reference_sweep_fleet_sizes": REFERENCE_SWEEP_FLEET_SIZES,
         "reference_curve_wait_seconds": reference_curve.mean_wait_seconds,
-        "data_source": "synthetic -- see TECHNICAL_REPORT.md for why not real NYC data",
+        "data_source": "synthetic -- see TECHNICAL_DOCUMENTATION.md for why not real NYC data",
         "summaries": summaries,
     }, indent=2))
     print(f"\nWrote {OUTPUT_PATH}")

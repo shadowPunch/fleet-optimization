@@ -34,7 +34,7 @@ def fit_arrival_model(
     fitted grid rests on this fallback visible; a real follow-up (not
     currently in scope) is a shrinkage/backoff estimator matching the OD
     model's treatment. This asymmetry is one plausible explanation for
-    `TECHNICAL_REPORT.md`'s finding that across-theta variance
+    `TECHNICAL_DOCUMENTATION.md`'s finding that across-theta variance
     shrinks *faster* than 1/n_days at small n — an unsmoothed zero-fallback
     is a **lower**-variance (more confidently wrong, not more uncertain)
     estimator at small n than a smoothed one would be, not yet confirmed

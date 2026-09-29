@@ -1,4 +1,4 @@
-"""Follow-up flagged in `TECHNICAL_REPORT.md`, not a redo of P1 itself:
+"""Follow-up flagged in `TECHNICAL_DOCUMENTATION.md`, not a redo of P1 itself:
 does calibrating fleet size to the real P90/median *ratio* (shape) instead
 of absolute median+p90 close any of the KS gap?
 
@@ -97,7 +97,7 @@ def main() -> None:
     )
     print(f"  ratio-calibrated fleet_size={ratio_result.fleet_size}, loss={ratio_result.loss:.6f}, "
           f"hit_boundary={ratio_result.hit_boundary}")
-    print("  (for comparison, the absolute-loss calibration in TECHNICAL_REPORT.md §5.5 picked fleet_size=4500)")
+    print("  (for comparison, the absolute-loss calibration in TECHNICAL_DOCUMENTATION.md §5.5 picked fleet_size=4500)")
 
     held_out_wait_seconds = (
         (held_out["pickup_ts"] - held_out["request_ts"]).dt.total_seconds().to_numpy()
@@ -130,7 +130,7 @@ def main() -> None:
         "wait_time_ks_distance": ks,
         "wait_time_ks_threshold": KS_THRESHOLD,
         "wait_time_ks_pass": ks_pass,
-        "prior_absolute_loss_ks_distance": 0.7355,  # TECHNICAL_REPORT.md, for direct comparison
+        "prior_absolute_loss_ks_distance": 0.7355,  # TECHNICAL_DOCUMENTATION.md, for direct comparison
     }
     OUTPUT_PATH.write_text(json.dumps(output, indent=2))
 

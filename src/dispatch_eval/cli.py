@@ -67,12 +67,14 @@ def _eda(args: argparse.Namespace) -> None:
 
 
 def _report(args: argparse.Namespace) -> None:
-    from dispatch_eval.studies.dashboard import build_dashboard
+    from dispatch_eval.studies.dashboard import build_dashboard, export_pdf
     from dispatch_eval.studies.report import build_report
 
     for path in build_report(args.results_dir, args.output_dir):
         print(f"wrote {path}")
     print(f"wrote {build_dashboard(args.results_dir, args.dashboard)}")
+    if args.pdf:
+        print(f"wrote {export_pdf(args.dashboard, args.dashboard.with_suffix('.pdf'))}")
 
 
 def _refresh(args: argparse.Namespace) -> None:
@@ -124,6 +126,7 @@ def main() -> None:
     report.add_argument("--results-dir", type=Path, default=Path("results"))
     report.add_argument("--output-dir", type=Path, default=Path("docs/figures"))
     report.add_argument("--dashboard", type=Path, default=Path("docs/dashboard.html"))
+    report.add_argument("--pdf", action="store_true", help="also print the dashboard to PDF (needs Chrome)")
     report.set_defaults(func=_report)
 
     args = parser.parse_args()

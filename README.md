@@ -1,5 +1,7 @@
 # Fleet Dispatch Optimization Under Input Model Uncertainty
 
+[![CI](https://github.com/shadowPunch/fleet-optimization/actions/workflows/ci.yml/badge.svg)](https://github.com/shadowPunch/fleet-optimization/actions/workflows/ci.yml)
+
 Which dispatch algorithm should a ride-hailing platform run, and how sure can
 it be? This project builds an event-driven digital twin of Uber's Manhattan
 market from 556,000 real NYC trips, validates it on days it never saw, and
@@ -14,7 +16,7 @@ model propagated into the answer.
   distance 0.031 against a pre-registered 0.10 threshold; median wait 189s
   simulated vs 187s real, p90 379s vs 367s. The first version failed this
   test (KS 0.74); the fix, and the reason, are in the
-  [technical report §5.5](TECHNICAL_REPORT.md#55-p1--validation-against-real-data).
+  [technical documentation §5.5](TECHNICAL_DOCUMENTATION.md#55-p1--validation-against-real-data).
 - **Rebalancing idle cars is where the value is, and it depends on supply.**
   It cuts waits by 39% with 3,200 cars, 24% with 4,000, 5% with 6,500 and 1.6%
   with 10,000, while serving more riders, not fewer. Smarter matching alone
@@ -30,8 +32,17 @@ model propagated into the answer.
   least 3,100 more cars (about double the fleet) to match either rebalancing
   policy.
 
-Interactive version: [`docs/dashboard.html`](docs/dashboard.html) (open locally;
-it is a single self-contained file).
+**Full results dashboard:** [PDF](docs/dashboard.pdf), or the interactive
+[`docs/dashboard.html`](docs/dashboard.html) (download and open in a browser;
+it is one self-contained file). **Detailed documentation:**
+[TECHNICAL_DOCUMENTATION.md](TECHNICAL_DOCUMENTATION.md).
+
+| Supply (cars) | Greedy wait | Best policy | Wait cut vs greedy | Riders served (best vs greedy) |
+|---|---|---|---|---|
+| 3,200 (shortage) | 314s | lookahead rebalancing (100% of draws) | 39% | 91.0% vs 87.4% |
+| 4,000 | 240s | fluid rebalancing (100% of draws) | 24% | 91.9% vs 90.3% |
+| 6,500 | 231s | fluid ≈ lookahead (tied) | 5% | 91.7% vs 91.3% |
+| 10,000 | 222s | fluid ≈ lookahead (tied) | 1.6% | 91.7% vs 91.6% |
 
 ## How it works
 
@@ -79,7 +90,7 @@ uv run pytest -q                    # 265 tests, synthetic data only, ~50s
 uv run dispatch-eval validate       # calibrate + held-out validation (~15 min)
 uv run dispatch-eval eda            # exploratory tables of the real data
 uv run dispatch-eval study --regime tight --workers 8   # one supply regime (hours)
-uv run dispatch-eval report         # every figure + docs/dashboard.html from results/
+uv run dispatch-eval report --pdf   # every figure + docs/dashboard.{html,pdf} from results/
 ```
 
 The first command that needs data downloads the January 2024 TLC file once and
@@ -110,9 +121,10 @@ analysis/        earlier synthetic-data experiments (see the technical report)
 tests/           265 tests
 ```
 
-[TECHNICAL_REPORT.md](TECHNICAL_REPORT.md) has the full methodology, every
-result (including the synthetic-data studies that preceded the NYC work),
-limitations, and the architecture decisions.
+[TECHNICAL_DOCUMENTATION.md](TECHNICAL_DOCUMENTATION.md) has the architecture and its
+design decisions, the algorithms, the full methodology, every result
+(including the synthetic-data studies that preceded the NYC work),
+limitations, and reproduction steps.
 
 ## Limitations
 
@@ -120,4 +132,4 @@ Wait data pins down the fleet size only from below (any fleet of ~4,000+ fits),
 so results are reported across that range. Zones are treated as points, rider
 patience is assumed (NYC publishes no cancellations), and the data covers one
 operator on January 2024 weekday afternoons. Details:
-[technical report §7](TECHNICAL_REPORT.md#7-limitations).
+[technical documentation §7](TECHNICAL_DOCUMENTATION.md#7-limitations).

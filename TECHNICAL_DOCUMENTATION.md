@@ -1,9 +1,15 @@
-# dispatch-eval: Technical Report
+# Fleet Optimization: Technical Documentation
 
-Input-uncertainty-aware evaluation of ride-hailing dispatch policies — full
-methodology, architecture, every measured result, and how to reproduce all
-of it. This is the detailed reference; [README.md](README.md) is the
-short version.
+Input-uncertainty-aware evaluation of ride-hailing dispatch policies (the
+`dispatch-eval` package): the problem, data, system architecture, algorithms,
+methodology, every measured result, limitations, and how to reproduce all of
+it. [README.md](README.md) is the short version.
+
+**Reading guide.** The NYC real-data work is §2 (data), §3 (architecture,
+including "Scaling to NYC"), §4 (policies and uncertainty method), §5.5
+(validation) and §5.9 (the policy study); §8 covers running it. Sections
+5.1-5.4 and 5.6-5.8 are the earlier synthetic-data studies that built and
+stress-tested the method.
 
 ## Table of contents
 

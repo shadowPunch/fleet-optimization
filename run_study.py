@@ -6,11 +6,11 @@ recompute a headline number from a notebook cell. One run_study.py that
 regenerates every figure from raw data.
 
 Pipeline, all against the pre-registered settings documented in
-`TECHNICAL_REPORT.md` §4 (primary metric = mean wait, α = 0.05,
+`TECHNICAL_DOCUMENTATION.md` §4 (primary metric = mean wait, α = 0.05,
 n_bootstrap ≥ 40):
 
 1. Load trip data (synthetic — no real Delhi NCR/Bengaluru trip-level data
-   has been available in this environment; see `TECHNICAL_REPORT.md` §2.
+   has been available in this environment; see `TECHNICAL_DOCUMENTATION.md` §2.
    `--data-source` exists as a switch for when that changes, not because a
    real path is implemented yet).
 2. Fit nominal input models and calibrate fleet size against the observed

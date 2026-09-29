@@ -3,10 +3,10 @@
 **Superseded (V1).** Kept as the record of the failed first validation; the
 current validation is `dispatch-eval validate` (`studies/validation.py`),
 which fixes the same-zone pickup and boarding defects this run exposed
-(TECHNICAL_REPORT.md §5.5).
+(TECHNICAL_DOCUMENTATION.md §5.5).
 
 Per the 2026-08-04 data-plan amendment (project plan §2,
-`TECHNICAL_REPORT.md`): NYC TLC data is this project's primary
+`TECHNICAL_DOCUMENTATION.md`): NYC TLC data is this project's primary
 methodological study, since it's the only source here with real trip-level
 timestamps to validate a wait-time prediction against at all. This script
 is that validation, not another shape comparison.
@@ -28,14 +28,14 @@ is that validation, not another shape comparison.
   *held out* and never touched during fitting — the actual falsification
   target.
 - Abandonment hazard: fixed at the pre-registered default
-  (`mean_patience_seconds=300.0`), per `TECHNICAL_REPORT.md`'s sweep
+  (`mean_patience_seconds=300.0`), per `TECHNICAL_DOCUMENTATION.md`'s sweep
   — not fit (fleet size and the abandonment hazard are never jointly
   identified from matched-trip data alone, and NYC HVFHS data only
   contains *matched* trips at all — no cancellation/abandonment record
   exists in this source, a real, structural limit on what it can validate,
   stated here rather than glossed over).
 
-**Pre-registered thresholds this checks against** (`TECHNICAL_REPORT.md`):
+**Pre-registered thresholds this checks against** (`TECHNICAL_DOCUMENTATION.md`):
 KS distance on wait time ≤ 0.10; hour-of-day cosine similarity ≥ 0.90.
 Cancellation rate is NOT checked here — NYC data cannot supply it (see
 above); that threshold belongs to the separate Bengaluru applicability
