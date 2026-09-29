@@ -51,6 +51,15 @@ distribution) on each resample, re-run every policy under common random
 numbers (CRN) so the comparison is paired, and report the distribution of
 outcomes across resamples — not a single number.
 
+**Where it landed.** On real data (NYC TLC, Manhattan Uber, January 2024)
+the twin validates on held-out days (wait-time KS 0.031 vs a pre-registered
+0.10; §5.5), and the policy study (§5.9) finds that rebalancing idle cars
+cuts waits by 39% → 1.6% as supply grows from 3,200 to 10,000 cars, that
+the best algorithm changes with supply and is statistically tied at the top
+from 6,500 cars up, and that single-run point estimates pick the wrong
+winner in two of four regimes. Sections 5.1-5.4 and 5.6-5.8 are the earlier
+synthetic-data studies that built and stress-tested the method.
+
 ## 2. Data sources and status
 
 **Amended 2026-08-04**, before any real-data validation was attempted (not
@@ -80,7 +89,7 @@ circumstance. Roles restructured accordingly:
   statistical honesty. The schema adapter (`sources/delhi_ncr.py`) stays
   as a working, tested capability, unused for any claimed result.
 
-Everything not explicitly run against real NYC data (§5.5) runs against
+Everything not explicitly run against real NYC data (§5.5, §5.9) runs against
 `dispatch_eval.sources.synthetic`, a generator that produces schema-valid
 trip records from a chosen, arbitrary ground truth — useful for building
 and testing the harness and for real methodology development (it found and
@@ -1102,7 +1111,7 @@ committed). None require real data except where noted.
 
 ```bash
 uv sync              # installs polars, numpy, scipy, pytest, ruff, networkx
-uv run pytest -q     # 158 tests
+uv run pytest -q     # full suite
 uv run ruff check .  # lint
 
 uv run python run_study.py --n-bootstrap 40 --n-replications 4   # ~4.5 min; results/study_results.parquet
