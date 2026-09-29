@@ -375,7 +375,9 @@ function renderPolicyTable(regime) {
     const p = s.policies.find(q => q.policy === name);
     const worth = s.vehicles_worth[name];
     const best = name === s.best_policy ? ` <span class="chip best">best</span>` : "";
-    const worthText = name === "greedy" ? "—" : `${worth.fraction_draws_lower_bound > 0 ? "≥ " : ""}${fmt(worth.vehicles_worth_mean)}`;
+    const worthText = name === "greedy" ? "—"
+      : !s.cars_priceable ? `<span style="color:var(--faint)" title="Greedy's wait barely falls with more cars at this supply, so a gain priced in cars is not meaningful">n/a</span>`
+      : `${worth.fraction_draws_lower_bound > 0 ? "≥ " : ""}${fmt(worth.vehicles_worth_mean)}`;
     return `<tr><td><span class="dot" style="background:${POLICY_COLOR[name]}"></span>${DATA.labels[name]}${best}</td>
       <td class="num">${secs(p.mean_wait_seconds)}</td>
       <td class="num">${secs(p.mean_wait_ci[0])}–${secs(p.mean_wait_ci[1])}</td>
@@ -385,7 +387,7 @@ function renderPolicyTable(regime) {
   }).join("");
   document.getElementById("policy-table").innerHTML = `<thead>${head}</thead><tbody>${rows}</tbody>`;
   document.getElementById("regime-note").textContent =
-    `${fmt(s.fleet_size)} cars · ${s.n_bootstrap} bootstrap draws × ${s.n_replications} replications · statistically tied with the best: ${s.indifference_set.map(n => DATA.labels[n]).join(", ")}`;
+    `${fmt(s.fleet_size)} cars · ${s.n_draws_completed || s.n_bootstrap} bootstrap draws × ${s.n_replications} replications · statistically tied with the best: ${s.indifference_set.map(n => DATA.labels[n]).join(", ")}`;
 }
 
 function renderRegimeTable() {

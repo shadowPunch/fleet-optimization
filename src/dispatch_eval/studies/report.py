@@ -230,13 +230,31 @@ def policy_gains(studies: dict[str, dict], out: Path) -> Path:
     )
 
 
+MIN_CURVE_RESPONSE = 0.02
+
+
+def greedy_curve_response(study: dict) -> float:
+    """Relative drop in greedy's wait from the study fleet to the next larger
+    size on its curve. Near zero means adding cars no longer shortens waits,
+    so a gain priced in cars is ill-conditioned (a tiny wait gap maps to
+    thousands of cars)."""
+    sizes = study["fleet_curve"]["fleet_sizes"]
+    waits = np.minimum.accumulate(np.asarray(study["fleet_curve"]["mean_wait_seconds"]))
+    i = sizes.index(study["fleet_size"])
+    return float((waits[i] - waits[i + 1]) / waits[i]) if i + 1 < len(sizes) else 0.0
+
+
 def vehicles_worth(studies: dict[str, dict], out: Path) -> Path:
+    priced = {r: s for r, s in studies.items() if greedy_curve_response(s) >= MIN_CURVE_RESPONSE}
+    skipped = [r for r in studies if r not in priced]
+    note = (f" (omitted: {', '.join(skipped)} — greedy's wait barely responds to more cars there)"
+            if skipped else "")
     return _per_regime_panels(
-        studies,
+        priced,
         lambda s, n: s["vehicles_worth"][n]["vehicles_worth_mean"],
         lambda s, n: tuple(s["vehicles_worth"][n]["vehicles_worth_ci"]),
         "Extra cars greedy would need",
-        "Each algorithm's gain priced in vehicles (fleet-equivalent vs greedy)",
+        "Each algorithm's gain priced in vehicles (fleet-equivalent vs greedy)" + note,
         # Beyond greedy's measured fleet curve the figure is a lower bound.
         lambda s, n, v: ("≥ " if s["vehicles_worth"][n]["fraction_draws_lower_bound"] > 0 else "")
         + f"{v:,.0f}",

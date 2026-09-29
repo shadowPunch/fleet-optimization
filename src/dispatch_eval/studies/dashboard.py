@@ -14,7 +14,7 @@ from pathlib import Path
 import polars as pl
 
 from dispatch_eval.policies.registry import POLICY_LABELS
-from dispatch_eval.studies.report import REGIME_ORDER
+from dispatch_eval.studies.report import MIN_CURVE_RESPONSE, REGIME_ORDER, greedy_curve_response
 
 TEMPLATE = Path(__file__).with_name("dashboard_template.html")
 PLACEHOLDER = "/*__DATA__*/null"
@@ -45,6 +45,10 @@ def dashboard_payload(results_dir: Path) -> dict:
         for regime in REGIME_ORDER
         if (path := results_dir / f"nyc_study_{regime}.json").exists()
     }
+    for study in studies.values():
+        study["cars_priceable"] = (
+            "fleet_curve" in study and greedy_curve_response(study) >= MIN_CURVE_RESPONSE
+        )
     return {
         "generated": date.today().isoformat(),
         "labels": POLICY_LABELS,

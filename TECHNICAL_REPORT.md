@@ -20,6 +20,7 @@ short version.
    - [5.6 C3 — decision currency and B5's clairvoyant bound](#56-c3--decision-currency-and-b5s-clairvoyant-bound)
    - [5.7 C4 — compute parity](#57-c4--compute-parity)
    - [5.8 C5 — Census/BBMP ward crosswalk](#58-c5--censusbbmp-ward-crosswalk)
+   - [5.9 The NYC policy study](#59-the-nyc-policy-study)
 6. [Literature novelty check (P0.1)](#6-literature-novelty-check-p01)
 7. [Limitations](#7-limitations)
 8. [Reproducibility](#8-reproducibility)
@@ -630,6 +631,8 @@ validation and presenting the output as real-world-grounded would be
 exactly the failure mode this project's methodology exists to prevent.
 Every synthetic-data result in this report describes this simulator's own
 dynamics; it is not yet demonstrated to describe any real market's.
+(This was V1. After the V2 fix below passed, the real-data study was run:
+§5.9.)
 
 #### Validation V2 — pre-specification (2026-09-28, before the full run)
 
@@ -794,6 +797,81 @@ specifically resisted scripted access (data.gov.in's PCA file is a
 client-side SPA) — population/SC/ST and household amenities are already
 crosswalked without it.
 
+### 5.9 The NYC policy study
+
+`dispatch-eval study` on the validated twin (§5.5 V2), one run per supply
+regime, on Kaggle CPU kernels (4 cores each). Because wait data bounds the
+fleet only from below, the study spans the data-consistent range (4,000,
+6,500, 10,000 cars) plus a driver-shortage counterfactual below it
+(3,200). Each regime uses the same-zone pickup median that calibrated best
+at its fleet size (`configs/nyc.yaml`).
+
+**Protocol.** Five policies (§4), each tunable one given the same 25-point
+random search. Tuning is constrained: a candidate must serve at least as
+many riders as greedy dispatch (within 0.5 points), because in a first
+smoke test an unconstrained batched matcher "won" on mean wait by shrinking
+its pickup radius and stranding riders (service 90% → 83%). Then 200
+bootstrap draws × 5 CRN replications per regime (100 draws for 10,000
+cars, see below): trips resampled, every input model (arrivals, OD, travel
+time, boarding) refitted, all policies run on identical request streams.
+Intervals are 95% bootstrap-percentile intervals of paired per-draw
+differences.
+
+**Mean wait reduction vs greedy dispatch** (95% interval), riders served,
+and share of draws each policy ranks first:
+
+| Regime (cars) | Greedy wait | Batched | Value-aware | + Fluid rebalancing | + Lookahead rebalancing |
+|---|---|---|---|---|---|
+| shortage (3,200) | 314s · 87.4% served | 12.0% [9.4, 14.6] | 18.0% [14.6, 22.0] | 38.0% [34.0, 42.7] | **39.0% [35.0, 43.7] · 100% first** |
+| tight (4,000) | 240s · 90.3% | 2.9% [1.2, 4.5] | 2.8% [0.8, 4.5] | **24.1% [21.2, 27.4] · 100% first** | 23.5% [20.6, 26.8] |
+| mid (6,500) | 231s · 91.3% | 0.1% [−0.2, 0.7] | 0.0% [−0.3, 0.7] | 5.1% [4.3, 6.4] · 62% first | 5.1% [4.2, 6.2] · 38% first |
+| abundant (10,000) | 222s · 91.6% | 0.4% [0.1, 0.9] | 0.1% [−0.2, 0.4] | 1.5% [1.1, 2.2] · 43% first | 1.6% [1.0, 2.2] · 57% first |
+
+Rebalancing policies also serve more riders than greedy in every regime
+(91.0% vs 87.4% in the shortage; 91.7% vs 91.3-91.6% above it), so their
+lower waits are not bought by dropping hard requests.
+
+**Findings.**
+
+1. **Rebalancing is where the value is, and its value collapses as supply
+   grows**: 39% → 24% → 5% → 1.6% shorter waits from 3,200 to 10,000 cars.
+   Smarter matching alone (batched, value-aware) helps only under real
+   scarcity (12-18% at 3,200 cars), ~3% at 4,000, and nothing measurable
+   above that.
+2. **The best algorithm depends on supply, and near the top it cannot be
+   named at all.** Lookahead rebalancing wins every draw at 3,200 cars,
+   fluid rebalancing every draw at 4,000; at 6,500 and 10,000 the two are
+   statistically indistinguishable (indifference set of two; Kendall's τ
+   to the nominal ranking 0.55 and 0.53).
+3. **Point estimates pick the wrong winner.** The nominal (un-resampled)
+   ranking puts fluid first in the shortage, where lookahead wins 100% of
+   bootstrap draws, and lookahead first at 6,500, where fluid wins 62%.
+   Choosing an algorithm from one fitted simulator run would have gone the
+   wrong way in two of four regimes.
+4. **Priced in cars** (`dispatch-eval study`'s fleet-equivalence, paired
+   per draw against greedy's own wait-vs-fleet curve): in the shortage,
+   batched matching is worth ~310 extra cars and value-aware ~520; either
+   rebalancing policy beats anything greedy reaches even with double the
+   fleet (≥ 3,100 cars, a lower bound). Above ~6,500 cars greedy's curve
+   is nearly flat (227s at 8,000 → 218s at 20,000): waits hit a floor set
+   by within-zone pickup distance plus boarding, which neither cars nor
+   dispatch logic remove, and a gain priced in cars stops being meaningful
+   (omitted from `vehicles_worth.png` for 10,000 cars).
+5. **Input uncertainty is a third of simulation noise here**
+   (across-draw ÷ within-draw variance of the greedy-vs-best difference:
+   0.35, 0.31, 0.34, 0.30 by regime). With ~550k trips the fitted input
+   models are tight; what keeps the two rebalancers apart or not is mostly
+   intrinsic day-to-day randomness, not estimation error.
+
+**Compute, and a lost run.** Runtimes on 4 Kaggle cores: 7.6h (3,200 cars),
+8.8h (4,000), 10.8h (6,500). The single 10,000-car run was killed at
+Kaggle's 12-hour session limit after 143/200 draws with nothing saved. Its
+regime was rerun as two 50-draw shards (`dispatch-eval study --draws`),
+merged with `dispatch-eval merge` — shards reproduce a full run's cells
+exactly (`test_merged_shards_reproduce_a_full_run_exactly`) — giving 100
+draws, above the pre-registered minimum of 40. Studies now checkpoint every
+10 draws, so a killed run keeps its completed draws.
+
 ## 6. Literature novelty check (P0.1)
 
 A systematic check for whether this project's central methodological
@@ -866,13 +944,16 @@ independent policies via CRN.
 
 Stated together, not scattered through the results:
 
-1. **The twin does not currently validate against real wait-time data**
-   (§5.5). Every synthetic-data result in this report describes this
-   simulator's own dynamics, not demonstrably real market dynamics. The
-   arrival-process fit is validated; the dispatch/wait-time mechanism is
-   not, and a follow-up check isolated this to a genuine ~3x scale gap in
-   the reactive baseline's dispatch mechanism, not a fixable calibration
-   artifact.
+1. **The NYC twin validates on wait times but identifies supply only from
+   below** (§5.5 V2): every fleet of ~4,000+ reproduces the calibration
+   days, so policy results are reported across that range (§5.9), not at
+   one fleet size. Other modelling limits: zones are points (the shortest
+   real pickups, p10 approach 36s vs 53s simulated, are missed); rider
+   patience is assumed (300s mean), since NYC data records no
+   cancellations; one operator (Uber), one month, weekday afternoons; the
+   bootstrap resamples trips independently rather than whole days; and the
+   clairvoyant bound (B5) was not computed at NYC scale. Synthetic-data
+   results in §5.1-5.4 and 5.6-5.7 describe the simulator's own dynamics.
 2. **Bengaluru applicability data was not obtained**, despite a
    substantive, documented attempt. `https://nammayatri.in/open/` is the
    real, official open-data portal; a plain fetch returns only the SPA
